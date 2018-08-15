@@ -1,0 +1,158 @@
+
+<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Transitional//EN"
+  "http://www.w3.org/TR/xhtml1/DTD/xhtml1-transitional.dtd">
+
+<html xmlns="http://www.w3.org/1999/xhtml">
+  <head>
+    <meta http-equiv="X-UA-Compatible" content="IE=Edge" />
+    <meta http-equiv="Content-Type" content="text/html; charset=utf-8" />
+    <title>Architecture &#8212; LiberTEM  documentation</title>
+    <link rel="stylesheet" href="_static/alabaster.css" type="text/css" />
+    <link rel="stylesheet" href="_static/pygments.css" type="text/css" />
+    <script type="text/javascript" id="documentation_options" data-url_root="./" src="_static/documentation_options.js"></script>
+    <script type="text/javascript" src="_static/jquery.js"></script>
+    <script type="text/javascript" src="_static/underscore.js"></script>
+    <script type="text/javascript" src="_static/doctools.js"></script>
+    <script type="text/javascript" src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/2.7.1/MathJax.js?config=TeX-AMS-MML_HTMLorMML"></script>
+    <link rel="index" title="Index" href="genindex.html" />
+    <link rel="search" title="Search" href="search.html" />
+    <link rel="next" title="Contributing" href="contributing.html" />
+    <link rel="prev" title="Usage" href="usage.html" />
+   
+  <link rel="stylesheet" href="_static/custom.css" type="text/css" />
+  
+  
+  <meta name="viewport" content="width=device-width, initial-scale=0.9, maximum-scale=0.9" />
+
+  </head><body>
+  
+
+    <div class="document">
+      <div class="documentwrapper">
+        <div class="bodywrapper">
+          
+
+          <div class="body" role="main">
+            
+  <div class="section" id="architecture">
+<h1>Architecture<a class="headerlink" href="#architecture" title="Permalink to this headline">¶</a></h1>
+<img alt="_images/arch-cluster.svg" src="_images/arch-cluster.svg" /><p>For the beginning, LiberTEM will focus on pixelated STEM data processing, both
+interactive and offline. As concrete supported operations, we will start with
+everything that can be expressed as the application of one or more masks and
+summation, i.e. virtual detector, center of mass, …</p>
+<p>For our task, data locality is one of the most important factors for achieving
+good performance and scalabilty. With a traditional distributed storage
+solution (like lustre or NFS), the network will quickly become the bottleneck.
+Our new proposal builds on the <a class="reference external" href="https://hadoop.apache.org/docs/r3.1.0/">Hadoop filesytem (HDFS)</a>, which utilizes the
+local storage of each compute node. For this, the full dataset needs to be
+partitioned and the partitions distributed to the HDFS cluster.</p>
+<p>When taking care to avoid needless copying and buffering, and using the short
+circuit read facilities of HDFS, we can achieve native throughput on each node.
+With NVMe SSDs, this means we can process multiple gigabytes per second per node.</p>
+<p>For distributing the workload, we plan to use <a class="reference external" href="http://distributed.readthedocs.io/en/latest/">dask.distributed</a>. The <cite>Future</cite> API
+allows us to control our computation in a flexible way, with little overhead.
+With dask Futures, we can assure that computation on a partition of the dataset
+is scheduled on the node(s) that hold the partition on their local storage.</p>
+<p>When using HDFS, we cannot operate directly on HDF5 data, as there is no proper
+interface for HDF5/HDFS interoperability. Also, we need to partition the source
+dataset and distribute it on the HDFS cluster.</p>
+<p>That means we need an ingestion process and an intermediate data format. For
+now, we want to use raw binary files for their throughput benefits, with
+a simple json sidecar file with metadata. Later, something like TileDB on top
+of HDFS could work well, especially for applications that have non-linear
+access patterns.</p>
+<img alt="_images/arch-single-node.svg" src="_images/arch-single-node.svg" /><p>For single-node processing, HDFS is uneccessary. We want to allow
+a configuration for LiberTEM that works without HDFS and can directly process
+data from HDF5-based formats, skipping the ingestion step.</p>
+<p>As UI, we plan to develop a web-based interface. This allows LiberTEM to work
+in cloud environment as well as locally on a single node. We can benefit from
+existing FOSS frameworks and infrastructure for communication, authentication
+etc. of the web.</p>
+<p>A central part of the architecture is the API server. It is the place through
+which the client, Core and storage communicate with each other. It uses
+a protocol based on HTTP and/or websockets. The API server is completely
+stateless. State is contained in the result storage and Core components. For
+example, the browser-based client can receive real-time notifications via
+websockets from the computation Core for each part of the computation that has
+finished.</p>
+<p>The Core is tasked with orchestrating the execution of Jobs, which are
+computations on a whole DataSet or on a region of interest. It subdivides Jobs
+into smaller Tasks and distributes them on the cluster, or executes them
+locally. Our implementation will use dask, so the Core will contain a dask
+client, which speaks to the dask scheduler, which itself will speak to dask
+workers. In the single node case, the client, scheduler and workers are all
+running on the local node.</p>
+<p>Processing is done in an asynchronous fashion; if you start a job the request
+immediately returns, but you get notifications about status changes, or you can
+explicitly query the API server about a specific job.</p>
+</div>
+
+
+          </div>
+          
+        </div>
+      </div>
+      <div class="sphinxsidebar" role="navigation" aria-label="main navigation">
+        <div class="sphinxsidebarwrapper">
+<h1 class="logo"><a href="index.html">LiberTEM</a></h1>
+
+
+
+
+
+
+
+
+<h3>Navigation</h3>
+<p class="caption"><span class="caption-text">Contents:</span></p>
+<ul class="current">
+<li class="toctree-l1"><a class="reference internal" href="install.html">Installation</a></li>
+<li class="toctree-l1"><a class="reference internal" href="usage.html">Usage</a></li>
+<li class="toctree-l1 current"><a class="current reference internal" href="#">Architecture</a></li>
+<li class="toctree-l1"><a class="reference internal" href="contributing.html">Contributing</a></li>
+<li class="toctree-l1"><a class="reference internal" href="debugging.html">Debugging</a></li>
+<li class="toctree-l1"><a class="reference internal" href="why_python.html">Why Python?</a></li>
+</ul>
+
+<div class="relations">
+<h3>Related Topics</h3>
+<ul>
+  <li><a href="index.html">Documentation overview</a><ul>
+      <li>Previous: <a href="usage.html" title="previous chapter">Usage</a></li>
+      <li>Next: <a href="contributing.html" title="next chapter">Contributing</a></li>
+  </ul></li>
+</ul>
+</div>
+<div id="searchbox" style="display: none" role="search">
+  <h3>Quick search</h3>
+    <div class="searchformwrapper">
+    <form class="search" action="search.html" method="get">
+      <input type="text" name="q" />
+      <input type="submit" value="Go" />
+      <input type="hidden" name="check_keywords" value="yes" />
+      <input type="hidden" name="area" value="default" />
+    </form>
+    </div>
+</div>
+<script type="text/javascript">$('#searchbox').show(0);</script>
+        </div>
+      </div>
+      <div class="clearer"></div>
+    </div>
+    <div class="footer">
+      &copy;2018, LiberTEM Authors.
+      
+      |
+      Powered by <a href="http://sphinx-doc.org/">Sphinx 1.7.6</a>
+      &amp; <a href="https://github.com/bitprophet/alabaster">Alabaster 0.7.11</a>
+      
+      |
+      <a href="_sources/architecture.rst.txt"
+          rel="nofollow">Page source</a>
+    </div>
+
+    
+
+    
+  </body>
+</html>
