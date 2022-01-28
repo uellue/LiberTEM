@@ -58,7 +58,8 @@ Available versions
 ..................
 
 The tag "latest" (default) points to the stable release with the highest version
-number. Version tags for all stable releases are available as well. See `the LiberTEM
+number, and "continuous" points to the current master. Version tags for all
+stable releases and release candidates are available as well. See `the LiberTEM
 repository on Docker Hub <https://hub.docker.com/r/libertem/libertem/tags>`_ for
 details.
 

@@ -35,6 +35,12 @@ Alternative merging for Dask arrays
 .. autoclass:: libertem.udf.base.UDFMergeAllMixin
     :members:
 
+Alternative merging for Dask arrays
+###################################
+
+.. autoclass:: libertem.udf.base.UDFMergeAllMixin
+    :members:
+
 Meta information
 ################
 
