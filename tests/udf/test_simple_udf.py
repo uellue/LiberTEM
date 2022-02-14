@@ -661,6 +661,7 @@ class CheckSigSlicePartition(UDF):
         assert self.meta.tiling_scheme[self.meta.tiling_scheme_idx] == self.meta.sig_slice
         assert self.meta.slice.shape == self.meta.partition_shape
         assert self.meta.slice == self.meta._partition_slice
+        assert self.meta.partition_slice == self.meta.slice
         if isinstance(tile, DataTile):
             # this is technically an internal interface, we test here
             # as a sanity check:
