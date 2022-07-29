@@ -13,9 +13,9 @@ import scipy.io as sio
 import numpy as np
 
 from libertem.common.math import prod
-from libertem.corrections import CorrectionSet
+from libertem.io.corrections import CorrectionSet
 from libertem.common import Shape, Slice
-from libertem.web.messages import MessageConverter
+from libertem.common.messageconverter import MessageConverter
 from .base import (
     DataSet, DataSetException, DataSetMeta,
     FileSet, BasePartition, File, Decoder,

@@ -52,15 +52,15 @@ To use the Docker image and Singularity to start :code:`libertem-server`:
 
 .. code-block:: shell
 
-    $ singularity run docker://libertem/libertem -- /venv/bin/libertem-server
+    $ singularity exec docker://libertem/libertem /venv/bin/libertem-server
 
 Available versions
 ..................
 
 The tag "latest" (default) points to the stable release with the highest version
-number, and "continuous" points to the current master. Version tags for all
-stable releases are available as well. See `the LiberTEM repository on Docker
-Hub <https://hub.docker.com/r/libertem/libertem/tags>`_ for details.
+number. Version tags for all stable releases are available as well. See `the LiberTEM
+repository on Docker Hub <https://hub.docker.com/r/libertem/libertem/tags>`_ for
+details.
 
 Updating
 ........
@@ -103,7 +103,7 @@ There are a few command line options available:
     :literal:
 
 .. versionadded:: 0.6.0
-.. versionadded:: 0.9.0.dev0
+.. versionadded:: 0.9.0
     :code:`--preload` was added.
 
 For a cluster setup, you can run the scheduler on the appropriate network interface and
@@ -128,5 +128,5 @@ of the local user with Singularity.
 
 .. code-block:: shell
 
-    $ singularity run docker://libertem/libertem -- /venv/bin/dask-scheduler --host localhost
-    $ singularity run docker://libertem/libertem -- /venv/bin/libertem-worker tcp://localhost:8786
+    $ singularity exec docker://libertem/libertem /venv/bin/dask-scheduler --host localhost
+    $ singularity exec docker://libertem/libertem /venv/bin/libertem-worker tcp://localhost:8786

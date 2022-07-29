@@ -10,8 +10,8 @@ import h5py
 from libertem.common.math import prod
 from libertem.common import Slice, Shape
 from libertem.common.buffers import zeros_aligned
-from libertem.corrections import CorrectionSet
-from libertem.web.messages import MessageConverter
+from libertem.io.corrections import CorrectionSet
+from libertem.common.messageconverter import MessageConverter
 from .base import (
     DataSet, Partition, DataTile, DataSetException, DataSetMeta, _roi_to_nd_indices,
     TilingScheme,
@@ -147,6 +147,13 @@ def _tileshape_for_chunking(chunks, ds_shape):
     (4, 32, 32)
     """
     return chunks[-ds_shape.sig.dims - 1:]
+
+
+def _get_tileshape_nd(partition_slice, tiling_scheme):
+    extra_nav_dims = partition_slice.shape.nav.dims - tiling_scheme.shape.nav.dims
+    # keep shape of the rightmost dimension:
+    nav_item = min(tiling_scheme.shape[0], partition_slice.shape.nav[-1])
+    return extra_nav_dims * (1,) + (nav_item,) + tuple(tiling_scheme.shape.sig)
 
 
 class H5Reader:
@@ -545,8 +552,12 @@ class H5Partition(Partition):
         """
         Generate partition subslices for the given tiling scheme for the different cases.
         """
-        extra_nav_dims = self.meta.shape.nav.dims - tiling_scheme.shape.nav.dims
-        tileshape_nd = extra_nav_dims * (1,) + tuple(tiling_scheme.shape)
+        if tiling_scheme.intent == "partition":
+            tileshape_nd = self.slice_nd.shape
+        else:
+            tileshape_nd = _get_tileshape_nd(self.slice_nd, tiling_scheme)
+
+        assert all(ts <= ps for (ts, ps) in zip(tileshape_nd, self.slice_nd.shape))
 
         nav_dims = self.slice_nd.shape.nav.dims
 
@@ -669,7 +680,8 @@ class H5Partition(Partition):
     def set_corrections(self, corrections: CorrectionSet):
         self._corrections = corrections
 
-    def get_tiles(self, tiling_scheme, dest_dtype="float32", roi=None):
+    def get_tiles(self, tiling_scheme: TilingScheme, dest_dtype="float32", roi=None):
+        tiling_scheme = tiling_scheme.adjust_for_partition(self)
         if roi is not None:
             yield from self._get_tiles_with_roi(roi, dest_dtype, tiling_scheme)
         else:

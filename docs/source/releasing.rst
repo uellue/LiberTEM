@@ -48,7 +48,14 @@ When planning a release, create a new issue with the following checklist:
     ## Before (using a release candidate package)
 
     * [ ] Review open issues and pull requests
+    * [ ] License review: no import of GPL code from MIT code
+          `pydeps --only "libertem" --show-deps --noshow src\libertem | python scripts\licensecheck.py`
     * [ ] Run full CI pipeline, including slow tests, on [Azure DevOps](https://dev.azure.com/LiberTEM/LiberTEM/_build?definitionId=3)
+    * [ ] Run tests for related packages w/ new LiberTEM version
+        * [ ] LiberTEM-live
+        * [ ] LiberTEM-holo
+        * [ ] LiberTEM-blobfinder
+        * [ ] ptychography40
     * [ ] Handle deprecation, search the code base for `DeprecationWarning`
           that are supposed to be removed in that release.
     * [ ] GUI dependency update with `npm install`

@@ -8,8 +8,8 @@ from glob import glob, escape
 
 from libertem.common.math import prod
 from libertem.common import Shape
-from libertem.executor.base import JobExecutor
-from libertem.web.messages import MessageConverter
+from libertem.common.executor import JobExecutor
+from libertem.common.messageconverter import MessageConverter
 from .base import (
     DataSet, DataSetException, DataSetMeta,
     BasePartition, File, FileSet, IOBackend,

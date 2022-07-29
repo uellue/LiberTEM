@@ -3,8 +3,8 @@ import sparse
 import pytest
 
 from libertem.utils.generate import gradient_data, exclude_pixels
-from libertem.corrections import detector
-from libertem.masks import is_sparse
+from libertem.io.corrections import detector
+from libertem.common.sparse import is_sparse
 
 
 REPEATS = 1
@@ -264,6 +264,7 @@ def test_detector_patch_too_large():
 
 
 @pytest.mark.with_numba
+@pytest.mark.slow
 def test_detector_patch_overlapping():
     for i in range(REPEATS):
         print(f"Loop number {i}")

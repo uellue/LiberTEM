@@ -3,6 +3,8 @@
 Visualization
 -------------
 
+See :ref:`plotting` for user documentation!
+
 Matplotlib
 ~~~~~~~~~~
 
@@ -25,4 +27,7 @@ Base classes and functions
 ~~~~~~~~~~~~~~~~~~~~~~~~~~
 
 .. automodule:: libertem.viz.base
+   :members:
+
+.. automodule:: libertem.common.viz
    :members:

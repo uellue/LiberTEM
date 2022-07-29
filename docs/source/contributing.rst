@@ -38,7 +38,7 @@ Code contributions
 ------------------
 
 We are using `pull requests
-<https://docs.github.com/en/github/collaborating-with-pull-requests/proposing-changes-to-your-work-with-pull-requests/about-pull-requests>`_
+<https://docs.github.com/en/pull-requests/collaborating-with-pull-requests/proposing-changes-to-your-work-with-pull-requests/about-pull-requests>`_
 to accept contributions. Each pull request should focus on a single issue, to
 keep the number of changes small and reviewable. To keep your changes organized
 and to prevent unrelated changes from disturbing your pull request, create a new
@@ -110,7 +110,7 @@ using the following comment on the PR:
 If everything is good to go, your changes will be merged and you can
 delete the branch you created for the pull request.
 
-.. seealso:: `Guide on understanding the GitHub flow <https://guides.github.com/introduction/flow/>`_
+.. seealso:: `Guide on understanding the GitHub flow <https://docs.github.com/en/get-started/quickstart/github-flow>`_
 
 .. seealso:: `How to make a simple GitHub PR (video) <https://www.youtube.com/watch?v=cysuuUtbC6E>`_
 
@@ -126,7 +126,7 @@ different Python versions and interpreter implementations.
 This makes sure that you can run the tests locally the same way as they are run
 in continuous integration.
 
-After `installing tox <https://tox.readthedocs.io/en/latest/install.html>`_, you
+After `installing tox <https://tox.wiki/en/latest/install.html>`_, you
 can run the tests on all Python versions by simply running tox:
 
 .. code-block:: shell
@@ -181,18 +181,18 @@ other tests, you can use a boolean expression like this:
 
    $ tox -- -m "slow or not slow"
 
-Another example, to exclude both slow and functional tests:
+Another example, to exclude both slow and dist tests:
 
 .. code-block:: shell
 
-   $ tox -- -m "not functional and not slow"
+   $ tox -- -m "not dist and not slow"
 
 In these examples, ``--`` separates the the arguments of tox (left of ``--``)
 from the arguments for pytest on the right. List of marks used in our test
 suite:
 
 - `slow`: tests that take much longer than 1 second to run
-- `functional`: tests that spin up a local dask cluster
+- `dist`: tests that require a distributed Dask cluster setup
 
 Example notebooks
 ~~~~~~~~~~~~~~~~~
@@ -203,7 +203,7 @@ output saved in the notebooks is compared to the output of re-running the
 notebook. When writing an example notebook, this sometimes requires some work,
 because certain things will change from run to run. Please check `the nbval
 documentation
-<https://nbviewer.jupyter.org/github/computationalmodelling/nbval/blob/master/docs/source/index.ipynb>`_
+<https://nbviewer.org/github/computationalmodelling/nbval/blob/master/docs/source/index.ipynb>`_
 to understand how to ignore such values. See also the :code:`nbval_sanitize.cfg`
 file for our currently ignored patterns.
 
@@ -233,7 +233,7 @@ Code coverage
 ~~~~~~~~~~~~~
 
 After running the tests, you can inspect the test coverage by opening
-`htmlcov/index.html` in a web browser. When creating a pull request, the change
+:code:`htmlcov/index.html` in a web browser. When creating a pull request, the change
 in coverage is also reported by the codecov bot. Ideally, the test coverage
 should go up with each pull request, at least it should stay the same.
 

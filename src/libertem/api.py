@@ -5,16 +5,20 @@ from typing import (
 from typing_extensions import Literal
 import warnings
 
+from opentelemetry import trace
 import numpy as np
-from libertem.corrections import CorrectionSet
+from libertem.executor.pipelined import PipelinedExecutor
+
+from libertem.io.corrections import CorrectionSet
 from libertem.executor.concurrent import ConcurrentJobExecutor
 from libertem.executor.inline import InlineJobExecutor
 from libertem.io.dataset import load, filetypes
 from libertem.io.dataset.base import DataSet
 from libertem.common.buffers import BufferWrapper
 from libertem.executor.dask import DaskJobExecutor
+from libertem.executor.delayed import DelayedJobExecutor
 from libertem.executor.integration import get_dask_integration_executor
-from libertem.executor.base import JobExecutor
+from libertem.common.executor import JobExecutor
 from libertem.masks import MaskFactoriesType
 from libertem.analysis.raw import PickFrameAnalysis
 from libertem.analysis.com import COMAnalysis
@@ -27,11 +31,12 @@ from libertem.analysis.masks import MasksAnalysis
 from libertem.analysis.base import AnalysisResultSet, Analysis
 from libertem.udf.base import UDFResultDict, UDF, UDFResults
 from libertem.udf.auto import AutoUDF
-from libertem.utils.async_utils import async_generator, run_agen_get_last, run_gen_get_last
+from libertem.common.async_utils import async_generator, run_agen_get_last, run_gen_get_last
 
 if TYPE_CHECKING:
     import numpy.typing as nt
 
+tracer = trace.get_tracer(__name__)
 
 RunUDFResultType = UDFResultDict
 RunUDFSyncL = List[UDFResultDict]
@@ -45,7 +50,9 @@ ExecutorSpecType = Union[
     Literal['synchronous'], Literal['inline'],
     Literal['threads'],
     Literal['dask-integration'],
-    Literal['dask-make-default']
+    Literal['dask-make-default'],
+    Literal['delayed'],
+    Literal['pipelined'],
 ]
 
 
@@ -63,7 +70,7 @@ class Context:
     Parameters
     ----------
 
-    executor : ~libertem.executor.base.JobExecutor or None
+    executor : ~libertem.common.executor.JobExecutor or None
         If None, create a local dask.distributed cluster and client using
         :meth:`~libertem.executor.dask.DaskJobExecutor.make_local` with optimal configuration
         for LiberTEM. It uses all cores and compatible GPUs
@@ -115,31 +122,33 @@ class Context:
         ----------
 
         executor_spec:
-            Specify some common variants as string:
+            A string identifier for executor variants:
 
-            :"synchronous", "inline":
-                Use a :class:`InlineJobExecutor`
-            :"threads":
-                Use a :class:`ConcurrentJobExecutor`
-            :"dask-integration":
-                Use a JobExecutor that is compatible with the
-                currently active Dask scheduler. If a
-                dask.distributed :code:`Client` is active, use that with a
-                :class:`DaskJobExecutor`. This can be used to integrate LiberTEM
-                in an existing Dask workflow. This may not achieve
-                optimal LiberTEM performance and will usually not allow GPU processing with
-                LiberTEM, but avoids potential compatibility issues from changing the Dask
-                scheduler in an existing workflow. In particular, it will use
-                a local threading executor if Dask is currently using local threading.
-                That supports workflows that rely on direct data sharing between main node and
-                workers.
-            :"dask-make-default":
-                Use a local dask.distributed cluster and client
-                using :meth:`~libertem.executor.dask.DaskJobExecutor.make_local` like in the
-                :code:`None` case, but set it's Client as default Dask scheduler and
-                don't close this Client or Cluster when the LiberTEM Context closes. This is
-                recommended to start a dask.distributed Client for Dask workflows that are
-                compatible with the dask.distributed scheduler.
+            "synchronous", "inline":
+                Use a single-process, single-threaded
+                :class:`~libertem.executor.inline.InlineJobExecutor`
+            "threads":
+                Use a multi-threaded :class:`~libertem.executor.concurrent.ConcurrentJobExecutor`
+            "dask-integration":
+                Use a JobExecutor that is compatible with the currently active Dask scheduler.
+                See :func:`~libertem.executor.integration.get_dask_integration_executor` for
+                more information.
+            "dask-make-default":
+                Create a local :code:`dask.distributed` cluster and client
+                using :meth:`~libertem.executor.dask.DaskJobExecutor.make_local`, similar to
+                the default behaviour of :code:`Context()` called with no arguments.
+                However, the Client will be set as the default Dask scheduler and will
+                persist after the LiberTEM Context closes, which is suitable for downstream
+                computation using :code:`dask.distributed`.
+            "delayed":
+                Create a :class:`~libertem.executor.delayed.DelayedJobExecutor` which performs
+                computation using `dask.delayed <https://docs.dask.org/en/stable/delayed.html>`_.
+                This functionality is highly experimental at this time, see
+                :ref:`delayed_udfs` for more information.
+            "pipelined":
+                Create a :class:`~libertem.executor.pipelined.PipelinedExecutor`,
+                which is suitable for multi-process streaming live processing
+                using `LiberTEM-live <https://libertem.github.io/LiberTEM-live/>`_.
         *args, **kwargs
             Passed to :class:`Context`.
 
@@ -147,6 +156,7 @@ class Context:
         -------
         Instance of :class:`Context` using a new instance of the specified executor.
         '''
+        executor: JobExecutor
         if executor_spec in ('synchronous', 'inline'):
             executor = InlineJobExecutor()
         elif executor_spec == 'threads':
@@ -155,10 +165,15 @@ class Context:
             executor = get_dask_integration_executor()
         elif executor_spec == 'dask-make-default':
             executor = DaskJobExecutor.make_local(client_kwargs={"set_as_default": True})
+        elif executor_spec == 'delayed':
+            executor = DelayedJobExecutor()
+        elif executor_spec == 'pipelined':
+            executor = PipelinedExecutor()
         else:
             raise ValueError(
                 f'Argument `executor_spec` is {executor_spec}. Allowed are '
-                f'synchronous", "inline", "threads", "dask-integration" or "dask-make-default".'
+                f'synchronous", "inline", "threads", "dask-integration", '
+                f'"dask-make-default" or "pipelined".'
             )
         return cls(executor=executor, *args, **kwargs)
 
@@ -716,7 +731,7 @@ class Context:
 
         Examples
         --------
-        Run the `SumUDF` on a data set:
+        Run the :class:`~libertem.udf.sum.SumUDF` on a data set:
 
         >>> from libertem.udf.sum import SumUDF
         >>> result = ctx.run_udf(dataset=dataset, udf=SumUDF())
@@ -744,28 +759,29 @@ class Context:
         # In short, we can't have an overload `run_udf(..., plots=None, sync: Literal[True])`
         # because either we have a non-default argument after a default argument, or we have
         # `Literal[True] = ...` which overlaps with `Literal[False] = ...``
-        if sync:
-            return self._run_sync(
-                dataset=dataset,
-                udf=udf,
-                roi=roi,
-                corrections=corrections,
-                progress=progress,
-                backends=backends,
-                plots=plots,
-                iterate=False,
-            )
-        else:
-            return self._run_async(
-                dataset=dataset,
-                udf=udf,
-                roi=roi,
-                corrections=corrections,
-                progress=progress,
-                backends=backends,
-                plots=plots,
-                iterate=False,
-            )
+        with tracer.start_as_current_span("Context.run_udf"):
+            if sync:
+                return self._run_sync(
+                    dataset=dataset,
+                    udf=udf,
+                    roi=roi,
+                    corrections=corrections,
+                    progress=progress,
+                    backends=backends,
+                    plots=plots,
+                    iterate=False,
+                )
+            else:
+                return self._run_async(
+                    dataset=dataset,
+                    udf=udf,
+                    roi=roi,
+                    corrections=corrections,
+                    progress=progress,
+                    backends=backends,
+                    plots=plots,
+                    iterate=False,
+                )
 
     def run_udf_iter(
         self,
@@ -831,7 +847,7 @@ class Context:
 
         Examples
         --------
-        Run the `SumUDF` on a data set:
+        Run the :class:`~libertem.udf.sum.SumUDF` on a data set:
 
         >>> from libertem.udf.sum import SumUDF
         >>> for result in ctx.run_udf_iter(dataset=dataset, udf=SumUDF()):
@@ -981,7 +997,8 @@ class Context:
             udfs = list(udf)
 
         if enable_plotting:
-            plots = self._prepare_plots(udfs, dataset, roi, plots)
+            with tracer.start_as_current_span("prepare_plots"):
+                plots = self._prepare_plots(udfs, dataset, roi, plots)
 
         if corrections is None:
             corrections = dataset.get_correction_data()
@@ -999,16 +1016,18 @@ class Context:
                 progress=progress,
                 corrections=corrections,
                 backends=backends,
-                iterate=iterate
+                iterate=(iterate or enable_plotting)
             )
             for udf_results in result_iter:
                 yield udf_results
                 if enable_plotting:
                     self._update_plots(
-                        plots, udfs, udf_results.buffers, udf_results.damage, force=False
+                        plots, udfs, udf_results.buffers, udf_results.damage.data, force=False
                     )
             if enable_plotting:
-                self._update_plots(plots, udfs, udf_results.buffers, udf_results.damage, force=True)
+                self._update_plots(
+                    plots, udfs, udf_results.buffers, udf_results.damage.data, force=True
+                )
 
         if iterate:
             return _run_sync_wrap()

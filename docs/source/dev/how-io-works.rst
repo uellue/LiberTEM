@@ -84,7 +84,7 @@ tile blocks. This is done by passing in njit-ed functions to :code:`make_get_rea
 :code:`make_get_read_ranges` should only be called on module-level to enable
 caching of the numba compilation.
 
-Read ranges are generated as an array with the following shape::
+Read ranges are generated as an array with the following shape:
 
     :code:`(number_of_tiles, rr_per_tile, rr_num_entries)`
 
@@ -112,7 +112,7 @@ Notes for implementing a :class:`~libertem.io.dataset.base.DataSet`
 - Implement :meth:`~libertem.io.dataset.base.DataSet.check_valid` - this will
   be run on a worker node
 - Implement :meth:`~libertem.io.dataset.base.DataSet.get_msg_converter` - the
-  :class:`~libertem.web.messages.MessageConverter` class returned is responsible
+  :class:`~libertem.common.messageconverter.MessageConverter` class returned is responsible
   for parsing parameters passed to the Web API and converting them to a Python
   representation that can be passed to the
   :class:`~libertem.io.dataset.base.DataSet` constructor.

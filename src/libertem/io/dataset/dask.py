@@ -8,7 +8,7 @@ from libertem.io.dataset.base import (
     DataSet, DataSetMeta, BasePartition, File, FileSet, DataSetException
 )
 from libertem.io.dataset.base.backend_mmap import MMapFile, MMapBackend, MMapBackendImpl
-from libertem.web.messages import MessageConverter
+from libertem.common.messageconverter import MessageConverter
 
 log = logging.getLogger(__name__)
 
@@ -68,6 +68,8 @@ class DaskBackendImpl(MMapBackendImpl):
 
 class DaskDataSet(DataSet):
     """
+    .. versionadded:: 0.9.0
+
     Wraps a Dask.array.array such that it can be processed by LiberTEM.
     Partitions are created to be aligned with the array chunking. When
     the array chunking is not compatible with LiberTEM the wrapper
@@ -112,7 +114,6 @@ class DaskDataSet(DataSet):
         If False, allow optimization of the dask_arry chunking by
         re-ordering the nav_shape to put the most chunked dimensions first.
         This can help when more than one nav dimension is chunked.
-        # TODO add mechanism to re-order the dimensions of results automatically
 
     min_size: float, optional
         The minimum partition size in bytes if the array chunking allows
@@ -132,6 +133,8 @@ class DaskDataSet(DataSet):
 
     Will create a dataset with 5 partitions split along the zeroth dimension.
     """
+    # TODO add mechanism to re-order the dimensions of results automatically
+    # if preserve_dimensions is set to False
     def __init__(self, dask_array, *, sig_dims, preserve_dimensions=True,
                  min_size=None, io_backend=None):
         super().__init__(io_backend=io_backend)
@@ -147,7 +150,7 @@ class DaskDataSet(DataSet):
         self._min_size = min_size
         if self._min_size is None:
             # TODO add a method to determine a sensible partition byte-size
-            self._min_size = 128 * (2**20)  # MB
+            self._min_size = self._default_min_size
 
     @property
     def array(self):
@@ -182,6 +185,13 @@ class DaskDataSet(DataSet):
     @classmethod
     def get_msg_converter(cls):
         return DaskDatasetParams
+
+    @property
+    def _default_min_size(self):
+        """
+        Default minimum chunk size if not supplied at init
+        """
+        return 128 * (2**20)  # MB
 
     def _chunk_slices(self, array):
         chunks = array.chunks

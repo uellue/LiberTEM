@@ -3,12 +3,23 @@ import cloudpickle
 import psutil
 import contextlib
 
-from .base import JobExecutor, Environment, TaskProtocol
-from .scheduler import Worker, WorkerSet
+from .base import BaseJobExecutor
+from libertem.common.executor import (
+    Environment, SimpleWorkerQueue, TaskCommHandler, TaskProtocol, WorkerContext, WorkerQueue,
+)
+from libertem.common.scheduler import Worker, WorkerSet
 from libertem.common.backend import get_use_cuda
 
 
-class InlineJobExecutor(JobExecutor):
+class InlineWorkerContext(WorkerContext):
+    def __init__(self, queue: SimpleWorkerQueue):
+        self._queue = queue
+
+    def get_worker_queue(self) -> WorkerQueue:
+        return self._queue
+
+
+class InlineJobExecutor(BaseJobExecutor):
     """
     Naive JobExecutor that just iterates over partitions and processes them one after another
 
@@ -36,18 +47,27 @@ class InlineJobExecutor(JobExecutor):
         tasks: Iterable[TaskProtocol],
         params_handle: Any,
         cancel_id: Any,
+        task_comm_handler: TaskCommHandler,
     ):
+        worker_queue = SimpleWorkerQueue()
+        task_comm_handler.start()
         threads = self._inline_threads
         if threads is None:
             threads = psutil.cpu_count(logical=False)
-        env = Environment(threads_per_worker=threads, threaded_executor=False)
+        env = Environment(
+            threads_per_worker=threads,
+            threaded_executor=False,
+            worker_context=InlineWorkerContext(queue=worker_queue),
+        )
         for task in tasks:
             if self._debug:
                 cloudpickle.loads(cloudpickle.dumps(task))
+            task_comm_handler.handle_task(task, worker_queue)
             result = task(env=env, params=params_handle)
             if self._debug:
                 cloudpickle.loads(cloudpickle.dumps(result))
             yield result, task
+        task_comm_handler.done()
 
     def run_function(self, fn, *args, **kwargs):
         if self._debug:

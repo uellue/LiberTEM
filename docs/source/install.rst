@@ -4,7 +4,7 @@ Installation
 ============
 
 .. note::
-    LiberTEM can currently be used on Python 3.6, 3.7, 3.8 and >=3.9.3.
+    LiberTEM can currently be used on Python 3.6, 3.7, 3.8, >=3.9.3 and 3.10.
 
     If you would like to install the latest development version, please also
     see :ref:`installing from a git clone`.
@@ -199,7 +199,7 @@ Windows
 -------
 
 The recommended method to install LiberTEM on Windows is based on `Miniconda 64
-bit with a compatible Python version <https://conda.io/miniconda.html>`_.
+bit with a compatible Python version <https://docs.conda.io/en/latest/miniconda.html>`_.
 This installs a Python distribution.
 
 The installation and running of LiberTEM on Windows with the

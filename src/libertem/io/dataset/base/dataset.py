@@ -7,12 +7,12 @@ from libertem.common.shape import Shape
 from libertem.common.math import prod
 from libertem.io.utils import get_partition_shape
 from libertem.io.dataset.base import DataSetException, MMapBackend
-from libertem.web.messageconverter import MessageConverter
-from libertem.corrections.corrset import CorrectionSet
+from libertem.common.messageconverter import MessageConverter
+from libertem.io.corrections.corrset import CorrectionSet
 from .partition import BasePartition, Partition
 
 if typing.TYPE_CHECKING:
-    from libertem.executor.base import JobExecutor
+    from libertem.common.executor import JobExecutor, TaskCommHandler
     from libertem.io.dataset.base import IOBackend, Decoder, DataSetMeta
     from numpy import typing as nt
 
@@ -295,6 +295,10 @@ class DataSet:
     @property
     def meta(self) -> Optional["DataSetMeta"]:
         return self._meta
+
+    def get_task_comm_handler(self) -> "TaskCommHandler":
+        from libertem.common.executor import NoopCommHandler
+        return NoopCommHandler()
 
 
 class WritableDataSet:

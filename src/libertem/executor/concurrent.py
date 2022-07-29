@@ -4,19 +4,27 @@ import logging
 import concurrent.futures
 from typing import Iterable, Any
 
+from opentelemetry import trace
+
 from .base import (
-    JobExecutor, JobCancelledError, TaskProtocol, sync_to_async, AsyncAdapter,
+    BaseJobExecutor, AsyncAdapter,
 )
+from libertem.common.executor import (
+    JobCancelledError, TaskProtocol, TaskCommHandler,
+)
+from libertem.common.async_utils import sync_to_async
 from libertem.utils.devices import detect
-from .scheduler import Worker, WorkerSet
+from libertem.common.scheduler import Worker, WorkerSet
 from libertem.common.backend import get_use_cuda
+from libertem.common.tracing import TracedThreadPoolExecutor
 from .dask import _run_task
 
 
 log = logging.getLogger(__name__)
+tracer = trace.get_tracer(__name__)
 
 
-class ConcurrentJobExecutor(JobExecutor):
+class ConcurrentJobExecutor(BaseJobExecutor):
     '''
     :class:`JobExecutor` that uses :mod:`python.concurrent.futures`.
 
@@ -51,6 +59,7 @@ class ConcurrentJobExecutor(JobExecutor):
         tasks: Iterable[TaskProtocol],
         params_handle: Any,
         cancel_id: Any,
+        task_comm_handler: TaskCommHandler,
     ):
         tasks = list(tasks)
 
@@ -84,7 +93,7 @@ class ConcurrentJobExecutor(JobExecutor):
 
     def run_function(self, fn, *args, **kwargs):
         """
-        run a callable `fn` on any worker
+        run a callable :code:`fn` on any worker
         """
         fn_with_args = functools.partial(fn, *args, **kwargs)
         future = self.client.submit(fn_with_args)
@@ -92,7 +101,7 @@ class ConcurrentJobExecutor(JobExecutor):
 
     def map(self, fn, iterable):
         """
-        Run a callable `fn` for each element in `iterable`, on arbitrary worker nodes.
+        Run a callable :code:`fn` for each element in :code:`iterable`, on arbitrary worker nodes.
 
         Parameters
         ----------
@@ -124,10 +133,10 @@ class ConcurrentJobExecutor(JobExecutor):
 
     def run_each_host(self, fn, *args, **kwargs):
         """
-        Run a callable `fn` once on each host, gathering all results into a dict host -> result
-
-        TODO: any cancellation/errors to handle?
+        Run a callable :code:`fn` once on each host, gathering all results into
+        a dict host -> result
         """
+        # TODO: any cancellation/errors to handle?
         future = self.client.submit(fn, *args, **kwargs)
         return {"localhost": future.result()}
 
@@ -142,7 +151,8 @@ class ConcurrentJobExecutor(JobExecutor):
     @classmethod
     def make_local(cls):
         """
-        Spin up a local Concurrent thread pool
+        Create a local ConcurrentJobExecutor backed by
+        a :class:`python:concurrent.futures.ThreadPoolExecutor`
 
         Returns
         -------
@@ -151,7 +161,7 @@ class ConcurrentJobExecutor(JobExecutor):
         """
         devices = detect()
         n_threads = len(devices['cpus'])
-        client = concurrent.futures.ThreadPoolExecutor(max_workers=n_threads)
+        client = TracedThreadPoolExecutor(tracer, max_workers=n_threads)
         return cls(client=client, is_local=True)
 
     def __enter__(self):

@@ -11,17 +11,199 @@ Changelog
 
 .. _continuous:
 
-0.9.0.dev0
-##########
+0.11.0.dev0
+###########
 
 .. toctree::
   :glob:
 
   changelog/*/*
 
-.. _`v0-8-0`:
-
 .. _latest:
+.. _`v0-10-0`:
+
+0.10.0 / 2022-07-28
+###################
+
+.. image:: https://zenodo.org/badge/DOI/10.5281/zenodo.6927963.svg
+   :target: https://doi.org/10.5281/zenodo.6927963
+
+This release features the :ref:`pipelined` for parallel live data processing (:pr:`1267`).
+This change greatly improves the processing performance for live data, in
+particular to support detectors with high data rate. Many thanks to Alexander
+Clausen and Matthew Bryan for their work! The corresponding capabilities in the
+`LiberTEM-live <https://github.com/LiberTEM/LiberTEM-live/>`_ package will be
+released soon and announced separately.
+
+Other changes:
+
+New features
+------------
+
+* Support for Python 3.10.
+* :ref:`npy format` for reading NumPy .npy files (:issue:`222`, :pr:`1249`).
+* Support for updated EMPAD XML format, including series (:issue:`1259`,
+  :pr:`1260`).
+* Integrate :ref:`tracing` that allows to debug and trace distribted operation
+  of LiberTEM (:issue:`691`, :pr:`1266`).
+* :code:`libertem-server` picks a free port if the default is in use and no port
+  was specified (:pr:`1184`).
+* :func:`~libertem.executor.dask.cluster_spec` now accepts the same CUDA device
+  ID multiple times to spawn multiple workers on the same GPU. This can help
+  increase GPU resource utilisation for some workloads (:pr:`1270`).
+
+Bugfixes
+--------
+
+* Correct type determination in :class:`~libertem.udf.auto.AutoUDF`
+  (:pr:`1298`).
+* Fix non-square plots (:pr:`1255`).
+* Disable the Dask profiler due to `issues with the DM dataset
+  <https://github.com/dask/distributed/issues/6776>`_ (:pr:`1289`).
+* Fix GUI glitch in center of mass analysis (:pr:`1278`).
+
+Documentation
+-------------
+
+* Example on :ref:`binning <binning>` (:pr:`1250`).
+
+Miscellaneous
+-------------
+
+* Include tests in PyPI release to prepare release on conda-forge, and exclude
+  unneeded files. (:issue:`1271,1275`, :pr:`1276`).
+* Move some code around to make sure that :mod:`libertem.io` and
+  :mod:`libertem.common` only depend on code that is compatible with the MIT
+  license. Moved items are re-imported at the same positions as before to keep
+  backwards compatibility (:issue:`1031`, :pr:`1245`).
+
+
+.. _`v0-9-2`:
+
+0.9.2 / 2022-04-28
+##################
+
+.. image:: https://zenodo.org/badge/DOI/10.5281/zenodo.6502282.svg
+   :target: https://doi.org/10.5281/zenodo.6502282
+
+This is a bugfix release with two small fixes:
+
+* Example notebook: compatibility with HyperSpy 1.7.0 :pr:`1242`
+* Compatibility of CoM auto button with Jupyter server proxy :pr:`1220`
+
+.. _`v0-9-0`:
+
+0.9.0 / 2022-02-17
+##################
+
+.. image:: https://zenodo.org/badge/DOI/10.5281/zenodo.6125247.svg
+   :target: https://doi.org/10.5281/zenodo.6125247
+
+We are most happy to announce **full Dask array integration** with this release!
+Many thanks to Matthew Bryan who implemented major parts of this non-trivial
+feature. Most notably, HyperSpy lazy signals and LiberTEM can now be combined
+seamlessly. See :ref:`dask` for details and an example!
+
+This enables the following applications:
+
+* Use HyperSpy file readers and other readers that create Dask arrays for
+  LiberTEM.
+* Create an ad-hoc file reader for LiberTEM by just building a Dask array. This
+  is often simpler than implementing a native LiberTEM dataset, at the expense
+  of performance.
+* Use LiberTEM file readers for HyperSpy and other software that works with
+  Dask arrays.
+* Use the same implementation of an algorithm for live processing with LiberTEM,
+  offline processing with LiberTEM, and offline processing with HyperSpy.
+* Simplify implementation of complex processing routines on Dask arrays. That
+  includes, for example, routines that are not purely implemented with NumPy
+  array operations and produce complex output or are not compatible with all
+  Dask array chunking schemes. Here, LiberTEM UDFs offer a more powerful and
+  versatile interface than Dask's native `map_blocks()
+  <https://docs.dask.org/en/latest/generated/dask.array.map_blocks.html>`_
+  interface.
+* Chain processing steps together using Dask arrays for intermediate results,
+  including using the output of one UDF as input for another UDF. Dask arrays
+  allow working with large intermediate results efficiently since they can
+  remain on the workers.
+
+Specifically, the Dask integration encompasses the following features:
+
+* Create LiberTEM datasets from Dask arrays via the :ref:`daskds` (:pr:`1137`).
+* Create Dask arrays from LiberTEM UDF results using the
+  :class:`~libertem.executor.delayed.DelayedJobExecutor`. A UDF can define a
+  :meth:`~libertem.udf.base.UDFMergeAllMixin.merge_all` method in addition to
+  the usual :meth:`~libertem.udf.base.UDF.merge` to improve performance. See
+  :ref:`merge_all` for details (:pr:`1170`)!
+* Create Dask arrays directly from LiberTEM datasets using
+  :func:`libertem.contrib.daskadapter.make_dask_array`, which is already
+  possible since release 0.2.
+* Executor options to improve integration, see :ref:`scheduler` and
+  :ref:`executors` (:pr:`1170`, :issue:`1146,922`).
+
+Please note that these features are still experimental and cover a large space
+of possible uses and parameters. Expect the unexpected! Tests, feedback and
+improvements are highly appreciated.
+
+Other changes in this release:
+
+New features
+------------
+
+* Experimental helper function :meth:`libertem.analysis.com.guess_corrections`
+  to guess parameters for Center of Mass analysis (:pr:`1111`).
+* GUI interface for the COM analysis to call :meth:`libertem.analysis.com.guess_corrections`
+  and update the GUI parameters from the result (:pr:`1172`).
+* Support for some MIB Quad formats. All integer formats should be supported and
+  were tested with :code:`1x1` and :code:`2x2` layouts. Raw formats with
+  :code:`1x1` and :code:`2x2` layouts using 1 bit, 6 bit, and 12 bit counter
+  depth are supported as well. Support for raw MIB data in other layouts and bit
+  depths can be added on demand (:pr:`1169`, :issue:`1135`).
+* New attributes :attr:`libertem.udf.base.UDFMeta.sig_slice` and
+  :attr:`libertem.udf.base.UDFMeta.tiling_scheme_idx`. These attributes can be used for performant
+  access to the current signal slice - mostly important for throughput-limited
+  analysis (:pr:`1167`, :issue:`1166`).
+* New :code:`--preload` option to :code:`libertem-server` and :code:`libertem-worker`.
+  That makes it work as documented in :ref:`hdf5`, following
+  `Dask worker preloading
+  <https://docs.dask.org/en/stable/how-to/customize-initialization.html#preload-scripts>`_
+  (:pr:`1151`).
+* Allow selection of I/O backend in GUI and Python API (:issue:`753`, :pr:`896,1129`).
+* Re-add support for direct I/O. It was previously only supported as a special
+  case for raw files on Linux. Now it is supported for all native dataset
+  formats we support on Linux and Windows. Notable exceptions are the OS X
+  platform or HDF5, MRC, and SER formats (:pr:`1129`, :issue:`753`).
+* Support for reading TVIPS binary files, i.e. :code:`*_NNN.tvips` files (:pr:`1179`).
+
+Bugfixes
+--------
+
+* Allow running CoM analysis on a linescan dataset by only returning divergence
+  and curl if they are defined (:issue:`1138`, :pr:`1139`).
+* :code:`make_dask_array` now works correctly when a :code:`roi` is specified
+  (:issue:`933`).
+* Correct shape of buffer views in :meth:`~libertem.udf.base.UDFTileMixin.process_tile`
+  when the tile has depth 1 (:pr:`1215`).
+
+
+Documentation
+-------------
+
+* Information on multithreading added to UDF docs in :ref:`threading` (:pr:`1170`).
+
+Miscellaneous
+-------------
+
+* A `Docker image with a LiberTEM installation
+  <https://hub.docker.com/r/libertem/libertem/tags>`_ is available on DockerHub
+  now. See :ref:`containers` for details (:pr:`1144`, :issue:`484`).
+* Improve performance with large UDF parameters (:pr:`1143`).
+* Start using :mod:`libertem.preload` again and import :code:`hdf5plugin` if
+  present so that users don't have to specify this common selection of HDF5
+  filters as preload themselves (:pr:`1160`).
+
+
+.. _`v0-8-0`:
 
 0.8.0 / 2021-10-04
 ##################
@@ -326,8 +508,8 @@ Bugfixes
 * GUI: Fixed the glitch in file opening dialogue by disallowing parallel browsing before loading is concluded (:pr:`752`).
 * Handle empty ROI and extra_shape with zero. Empty result buffers of the appropriate shape are returned if the ROI
   is empty or :code:`extra_shape` has a zero (:pr:`765`)
-* Improve internals of :mod:`libertem.corrections.detector` and
-  :mod:`libertem.corrections.corrset` to better support correction
+* Improve internals of :mod:`libertem.io.corrections.detector` and
+  :mod:`libertem.io.corrections.corrset` to better support correction
   of many dead pixels. (:pr:`890`, :issue:`889`)
 * Handle single-frame partitions in combination with aux data.
   Instead of squeezing the aux buffer, reshape to the correct shape (:issue:`791`, :pr:`902`).
@@ -695,7 +877,7 @@ New features
 * :ref:`Clustering` analysis (:pr:`401,408` by :user:`kruzaeva`).
 * :class:`libertem.io.dataset.dm.DMDataSet` implementation based on ncempy (:pr:`497`)
 
-  * Adds a new :meth:`~libertem.executor.base.JobExecutor.map` executor primitive. Used to concurrently
+  * Adds a new :meth:`~libertem.common.executor.JobExecutor.map` executor primitive. Used to concurrently
     read the metadata for DM3/DM4 files on initialization.
   * Note: no support for the web GUI yet, as the naming patterns for DM file series varies wildly. Needs
     changes in the file dialog.
@@ -782,7 +964,7 @@ Point release to fix a bug in the Zenodo upload for production releases.
 This release constitutes a major update after almost a year of development.
 Systematic change management starts with this release.
 
-This is the `release message <https://groups.google.com/d/msg/libertem/p7MVoVqXOs0/vP_tu6K7CwAJ>`_: 
+This is the `release message <https://groups.google.com/g/libertem/c/p7MVoVqXOs0/m/vP_tu6K7CwAJ>`_:
 
 User-defined functions
 ----------------------

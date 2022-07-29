@@ -3,8 +3,8 @@ import importlib
 from typing_extensions import Literal
 
 from libertem.io.dataset.base import DataSetException, DataSet
-from libertem.utils.async_utils import sync_to_async
-from libertem.executor.scheduler import Scheduler
+from libertem.common.async_utils import sync_to_async
+from libertem.common.scheduler import Scheduler
 
 
 filetypes = {
@@ -22,6 +22,7 @@ filetypes = {
     "mrc": "libertem.io.dataset.mrc.MRCDataSet",
     "tvips": "libertem.io.dataset.tvips.TVIPSDataSet",
     "dask": "libertem.io.dataset.dask.DaskDataSet",
+    "npy": "libertem.io.dataset.npy.NPYDataSet",
 }
 
 

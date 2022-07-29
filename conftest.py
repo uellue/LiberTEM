@@ -15,6 +15,8 @@ import pytest
 import h5py
 import aiohttp
 from dask import distributed as dd
+import dask
+
 from distributed.scheduler import Scheduler
 import tornado.httpserver
 
@@ -27,15 +29,20 @@ from libertem.io.dataset.memory import MemoryDataSet
 from libertem.io.dataset.base import BufferedBackend, MMapBackend, DirectBackend
 from libertem.executor.dask import DaskJobExecutor, cluster_spec
 from libertem.executor.concurrent import ConcurrentJobExecutor
-from libertem.utils.threading import set_num_threads_env
+from libertem.common.threading import set_num_threads_env
 from libertem.viz.base import Dummy2DPlot
 
 from libertem.utils.devices import detect
 
 from libertem.web.server import make_app, EventRegistry
 from libertem.web.state import SharedState
-from libertem.executor.base import AsyncAdapter, sync_to_async
-from libertem.utils.async_utils import adjust_event_loop_policy
+from libertem.executor.base import AsyncAdapter
+from libertem.common.async_utils import sync_to_async
+from libertem.common.async_utils import adjust_event_loop_policy
+from libertem.common.tracing import maybe_setup_tracing
+
+maybe_setup_tracing("pytest")
+
 
 # A bit of gymnastics to import the test utilities since this
 # conftest.py file is shared between the doctests and unit tests
@@ -45,6 +52,9 @@ location = os.path.join(basedir, "tests/utils.py")
 spec = importlib.util.spec_from_file_location("utils", location)
 utils = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(utils)
+
+# Mitigation for https://github.com/dask/distributed/issues/6776
+dask.config.set({"distributed.worker.profile.enabled": False})
 
 
 def get_or_create_hdf5(tmpdir_factory, filename, *args, **kwargs):
@@ -237,6 +247,25 @@ def default_raw(tmpdir_factory, default_raw_data):
         path=str(filename),
         dtype="float32",
         nav_shape=(16, 16),
+        sig_shape=(128, 128),
+        io_backend=MMapBackend(),
+    )
+    ds.set_num_cores(2)
+    yield ds
+
+
+@pytest.fixture(scope='session')
+def default_raw_asymm(tmpdir_factory, default_raw_data):
+    lt_ctx = lt.Context(executor=InlineJobExecutor())
+    datadir = tmpdir_factory.mktemp('data')
+    filename = datadir + '/raw-test-default'
+    default_raw_data.tofile(str(filename))
+    del default_raw_data
+    ds = lt_ctx.load(
+        "raw",
+        path=str(filename),
+        dtype="float32",
+        nav_shape=(14, 17),
         sig_shape=(128, 128),
         io_backend=MMapBackend(),
     )
@@ -455,6 +484,71 @@ def raw_data_8x8x8x8_path(tmpdir_factory):
     yield str(filename)
 
 
+@pytest.fixture(scope='session')
+def npy_datadir(tmpdir_factory):
+    yield tmpdir_factory.mktemp('data_npy')
+
+
+@pytest.fixture(scope='session')
+def default_npy_filepath(npy_datadir):
+    yield str(npy_datadir + '/test_default.npy')
+
+
+@pytest.fixture()
+def npy_random_array(npy_datadir):
+    random_filename = str(npy_datadir + f'/array{np.random.randint(0, 1000)}.npy')
+    ndim = np.random.randint(1, 6)
+    shape = tuple(np.random.randint(1, 10) for _ in range(ndim))
+    dtype = np.random.choice([np.float32, np.uint8, np.int64, np.complex128])
+    array = np.empty(shape, dtype=dtype)
+    np.save(random_filename, array)
+    return random_filename, array
+
+
+@pytest.fixture()
+def npy_fortran_array(npy_datadir):
+    random_filename = str(npy_datadir + f'/array{np.random.randint(0, 1000)}.npy')
+    array = np.ones((55, 55), order='F')
+    np.save(random_filename, array)
+    return random_filename, array
+
+
+@pytest.fixture(scope='session')
+def npy_8x8x8x8_path(npy_datadir):
+    filename = npy_datadir + '/8x8x8x8.npy'
+    data = utils._mk_random(size=(8, 8, 8, 8), dtype='float32')
+    np.save(str(filename), data)
+    del data
+    yield str(filename)
+
+
+@pytest.fixture(scope='session')
+def npy_8x8x8x8_ds(npy_8x8x8x8_path):
+    lt_ctx = lt.Context.make_with('inline')
+    ds = lt_ctx.load(
+            'npy',
+            path=npy_8x8x8x8_path,
+        )
+    ds.set_num_cores(2)
+    yield ds
+
+
+@pytest.fixture(scope='session')
+def default_npy(default_npy_filepath, default_raw_data):
+    lt_ctx = lt.Context.make_with('inline')
+    filename = default_npy_filepath
+    np.save(filename, default_raw_data)
+    ds = lt_ctx.load(
+        "npy",
+        path=filename,
+        sig_dims=2,
+        io_backend=MMapBackend(),
+    )
+    ds.set_num_cores(2)
+    del default_raw_data
+    yield ds
+
+
 @pytest.fixture
 def naughty_filename():
     '''
@@ -550,17 +644,29 @@ def fixup_event_loop():
     adjust_event_loop_policy()
 
 
-@pytest.hookimpl(trylast=True)
-def pytest_fixture_post_finalizer(fixturedef, request):
-    """Called after fixture teardown"""
-    if fixturedef.argname == "event_loop":
-        # Work around: pytest-asyncio sets an empty event loop policy here,
-        # which breaks on windows, where we have to supply a specific
-        # event loop policy. Until this is fixed in pytest-asyncio, manually re-set
-        # the event policy here.
-        # See also: https://github.com/pytest-dev/pytest-asyncio/pull/192
-        asyncio.set_event_loop_policy(None)
-        adjust_event_loop_policy()
+@pytest.fixture(scope="session")
+def event_loop():
+    """
+    We need to use a session-scoped event loop, otherwise we get
+    errors like `RuntimeError: Cannot close a running event loop`.
+    """
+    loop = asyncio.get_event_loop_policy().new_event_loop()
+    yield loop
+    print("event loop teardown")
+    loop.run_until_complete(loop.shutdown_asyncgens())
+    if hasattr(loop, 'shutdown_default_executor'):
+        loop.run_until_complete(loop.shutdown_default_executor())
+    loop.close()
+
+    # Work around: pytest-asyncio sets an empty event loop policy here,
+    # which breaks on windows, where we have to supply a specific
+    # event loop policy. Until this is fixed in pytest-asyncio, manually re-set
+    # the event policy here.
+    # See also: https://github.com/pytest-dev/pytest-asyncio/pull/192
+    # (this is probably fixed in the current version of pytest-asyncio,
+    # but we can't use that one on Python 3.6, which we still support)
+    asyncio.set_event_loop_policy(None)
+    adjust_event_loop_policy()
 
 
 @pytest.fixture(autouse=True)

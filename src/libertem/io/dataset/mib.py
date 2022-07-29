@@ -13,7 +13,7 @@ import numpy as np
 from libertem.common.math import prod
 from libertem.common import Shape
 from libertem.io.dataset.base.file import OffsetsSizes
-from libertem.web.messages import MessageConverter
+from libertem.common.messageconverter import MessageConverter
 from .base import (
     DataSet, DataSetException, DataSetMeta,
     BasePartition, FileSet, File, make_get_read_ranges,
@@ -826,7 +826,7 @@ class MIBHeaderReader:
         # Assumption: layout is width x height
 
         # We currently only support 1x1 and 2x2 layouts, and support for raw
-        # files with 2x2 layout is limited to 1 or 6 bits. Support for 12bit and 24bit TBD.
+        # files with 2x2 layout is limited to 1, 6 or 12 bits. Support for 24bit TBD.
         # We don't yet support general Nx1 layouts, or arbitrary "chip select"
         # values (2x2 layout, but only a subset of them is enabled).
         sensor_layout_str = parts[7].replace('G', '').split('x')

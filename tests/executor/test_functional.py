@@ -1,4 +1,5 @@
 import os
+import sys
 from glob import glob
 import concurrent.futures
 import multiprocessing.pool
@@ -20,18 +21,20 @@ from utils import get_testdata_path
 
 
 @pytest.fixture(
+    scope='session',
     params=[
         "inline", "dask_executor", "dask_make_default", "dask_integration",
-        "concurrent", "delayed"
+        "concurrent", "delayed", "pipelined",
     ]
 )
-def ctx(request, dask_executor):
+def ctx(request, local_cluster_url):
+    print(f'Make ctx with {request.param}')
     if request.param == 'inline':
         yield Context.make_with('inline')
     elif request.param == "dask_executor":
+        dask_executor = DaskJobExecutor.connect(local_cluster_url)
         yield Context(executor=dask_executor)
-    elif request.param == "delayed_default":
-        yield Context(executor=DelayedJobExecutor())
+        dask_executor.close()
     elif request.param == "delayed_dist":
         with distributed.Client(
                 n_workers=2,
@@ -61,86 +64,133 @@ def ctx(request, dask_executor):
         yield Context.make_with("threads")
     elif request.param == "delayed":
         yield Context(executor=DelayedJobExecutor())
+    elif request.param == "pipelined":
+        if sys.version_info < (3, 8):
+            pytest.skip("PipelinedExecutor only supported from Python 3.8 onwards")
+        else:
+            from libertem.executor.pipelined import PipelinedExecutor
+            ctx = None
+            try:
+                ctx = Context(
+                    executor=PipelinedExecutor(
+                        spec=PipelinedExecutor.make_spec(cpus=range(2), cudas=[])
+                    )
+                )
+                yield ctx
+            finally:
+                if ctx is not None:
+                    ctx.close()
 
 
-@pytest.fixture(scope='session')
-def load_kwargs(hdf5, default_raw):
-    kwargs = [
-        {
+@pytest.fixture(
+    scope='session',
+    params=[
+        "HDF5", "RAW", "memory", "NPY", "BLO",
+        "DM", "EMPAD", "FRMS6", "K2IS",
+        "MIB", "MRC", "SEQ", "SER", "TVIPS"
+    ]
+)
+def load_kwargs(request, hdf5, default_raw, default_npy, default_npy_filepath):
+    param = request.param
+    testdata_path = get_testdata_path()
+    if param == 'HDF5':
+        return {
             'filetype': 'HDF5',
-            'path': hdf5.filename
-        },
-        {
+            'path': hdf5.filename,
+        }
+    elif param == 'RAW':
+        return {
             'filetype': 'RAW',
             'path': default_raw._path,
             'nav_shape': default_raw.shape.nav,
             'sig_shape': default_raw.shape.sig,
-            'dtype': default_raw.dtype
-        },
-        {
-            'filetype': 'memory',
-            'data': np.ones((3, 4, 5, 6))
+            'dtype': default_raw.dtype,
         }
-    ]
-    testdata_path = get_testdata_path()
-    blo_path = os.path.join(testdata_path, 'default.blo')
-    if os.path.isfile(blo_path):
-        kwargs.append({
-            'filetype': 'BLO',
-            'path': blo_path,
-        })
-    dm_files = list(sorted(glob(os.path.join(testdata_path, 'dm', '*.dm4'))))
-    if dm_files:
-        kwargs.append({
-            'filetype': 'dm',
-            'files': dm_files
-        })
-    empad_path = os.path.join(testdata_path, 'EMPAD', 'acquisition_12_pretty.xml')
-    if os.path.isfile(empad_path):
-        kwargs.append({
-            'filetype': 'EMPAD',
-            'path': empad_path
-        })
-    frms6_path = os.path.join(testdata_path, 'frms6', 'C16_15_24_151203_019.hdr')
-    if os.path.isfile(frms6_path):
-        kwargs.append({
-            'filetype': 'frms6',
-            'path': frms6_path
-        })
-    k2is_path = os.path.join(testdata_path, 'Capture52', 'Capture52_.gtg')
-    if os.path.isfile(k2is_path):
-        kwargs.append({
-            'filetype': 'k2is',
-            'path': k2is_path
-        })
-    mib_path = os.path.join(testdata_path, 'default.mib')
-    if os.path.isfile(mib_path):
-        kwargs.append({
-            'filetype': 'mib',
-            'path': mib_path,
-            'nav_shape': (32, 32)
-        })
-    mrc_path = os.path.join(testdata_path, 'mrc', '20200821_92978_movie.mrc')
-    if os.path.isfile(mrc_path):
-        kwargs.append({
-            'filetype': 'mrc',
-            'path': mrc_path
-        })
-    seq_path = os.path.join(testdata_path, 'default.seq')
-    if os.path.isfile(seq_path):
-        kwargs.append({
-            'filetype': 'seq',
-            'path': seq_path,
-            'nav_shape': (8, 8)
-        })
-    ser_path = os.path.join(testdata_path, 'default.ser')
-    if os.path.isfile(ser_path):
-        kwargs.append({
-            'filetype': 'ser',
-            'path': ser_path
-        })
-
-    return kwargs
+    elif param == 'memory':
+        return {
+            'filetype': 'memory',
+            'data': np.ones((3, 4, 5, 6)),
+        }
+    elif param == 'NPY':
+        return {
+            'filetype': 'NPY',
+            'path': default_npy_filepath,
+        }
+    elif param == 'BLO':
+        blo_path = os.path.join(testdata_path, 'default.blo')
+        if os.path.isfile(blo_path):
+            return {
+                'filetype': 'BLO',
+                'path': blo_path,
+            }
+    elif param == 'DM':
+        dm_files = list(sorted(glob(os.path.join(testdata_path, 'dm', '*.dm4'))))
+        if dm_files:
+            return {
+                'filetype': 'dm',
+                'files': dm_files
+            }
+    elif param == 'EMPAD':
+        empad_path = os.path.join(testdata_path, 'EMPAD', 'acquisition_12_pretty.xml')
+        if os.path.isfile(empad_path):
+            return {
+                'filetype': 'EMPAD',
+                'path': empad_path
+            }
+    elif param == 'FRMS6':
+        frms6_path = os.path.join(testdata_path, 'frms6', 'C16_15_24_151203_019.hdr')
+        if os.path.isfile(frms6_path):
+            return {
+                'filetype': 'frms6',
+                'path': frms6_path
+            }
+    elif param == 'K2IS':
+        k2is_path = os.path.join(testdata_path, 'Capture52', 'Capture52_.gtg')
+        if os.path.isfile(k2is_path):
+            return {
+                'filetype': 'k2is',
+                'path': k2is_path
+            }
+    elif param == 'MIB':
+        mib_path = os.path.join(testdata_path, 'default.mib')
+        if os.path.isfile(mib_path):
+            return {
+                'filetype': 'mib',
+                'path': mib_path,
+                'nav_shape': (32, 32)
+            }
+    elif param == 'MRC':
+        mrc_path = os.path.join(testdata_path, 'mrc', '20200821_92978_movie.mrc')
+        if os.path.isfile(mrc_path):
+            return {
+                'filetype': 'mrc',
+                'path': mrc_path
+            }
+    elif param == 'SEQ':
+        seq_path = os.path.join(testdata_path, 'default.seq')
+        if os.path.isfile(seq_path):
+            return {
+                'filetype': 'seq',
+                'path': seq_path,
+                'nav_shape': (8, 8)
+            }
+    elif param == 'SER':
+        ser_path = os.path.join(testdata_path, 'default.ser')
+        if os.path.isfile(ser_path):
+            return {
+                'filetype': 'ser',
+                'path': ser_path
+            }
+    elif param == 'TVIPS':
+        tvips_path = os.path.join(testdata_path, 'TVIPS', 'rec_20200623_080237_000.tvips')
+        if os.path.isfile(tvips_path):
+            return {
+                'filetype': 'TVIPS',
+                'path': tvips_path
+            }
+    else:
+        raise ValueError(f'Unknown file type {param}')
+    pytest.skip(f"Data file not found for {param}")
 
 
 def _make_udfs(ds):
@@ -156,23 +206,21 @@ def _make_udfs(ds):
 
 
 def _calculate(ctx, load_kwargs):
-    result = {}
     print(f"calculating with {ctx.executor}")
-    for kwargs in load_kwargs:
-        ds = ctx.load(**kwargs)
-        udfs = _make_udfs(ds)
-        roi = np.zeros(
-            np.prod(ds.shape.nav, dtype=np.int64),
-            dtype=bool
-        )
-        roi[0] = True
-        roi[-1] = True
-        roi[len(roi)//2] = True
-        roi = roi.reshape(ds.shape.nav)
-        print(f"calculating {kwargs['filetype']}")
-        result[kwargs['filetype']] = ctx.run_udf(
-            dataset=ds, udf=udfs, roi=roi
-        )
+    ds = ctx.load(**load_kwargs)
+    udfs = _make_udfs(ds)
+    roi = np.zeros(
+        np.prod(ds.shape.nav, dtype=np.int64),
+        dtype=bool
+    )
+    roi[0] = True
+    roi[-1] = True
+    roi[len(roi)//2] = True
+    roi = roi.reshape(ds.shape.nav)
+    print(f"calculating {load_kwargs['filetype']}")
+    result = ctx.run_udf(
+        dataset=ds, udf=udfs, roi=roi
+    )
     return result
 
 
@@ -184,23 +232,21 @@ def reference(load_kwargs):
 
 @pytest.mark.slow
 def test_executors(ctx, load_kwargs, reference):
-    results = _calculate(ctx, load_kwargs)
-    for key, res in results.items():
-        print(f"filetype: {key}")
+    result = _calculate(ctx, load_kwargs)
+    print(f"filetype: {load_kwargs['filetype']}")
 
-        assert len(res) == len(reference[key])
-        for i, item in enumerate(reference[key]):
-            assert item.keys() == res[i].keys()
-            for buf_key in item.keys():
-                print(f"buffer {buf_key}")
-                left = item[buf_key].raw_data
-                right = np.array(res[i][buf_key].raw_data)
-                print(np.max(np.abs(left - right)))
-                print(np.min(np.abs(left)))
-                print(np.min(np.abs(right)))
-                # To see what type we actually test
-                print("is allclose", np.allclose(left, right))
-                assert np.allclose(left, right)
+    for i, item in enumerate(reference):
+        assert item.keys() == result[i].keys()
+        for buf_key in item.keys():
+            print(f"buffer {buf_key}")
+            left = item[buf_key].raw_data
+            right = np.array(result[i][buf_key].raw_data)
+            print(np.max(np.abs(left - right)))
+            print(np.min(np.abs(left)))
+            print(np.min(np.abs(right)))
+            # To see what type we actually test
+            print("is allclose", np.allclose(left, right))
+            assert np.allclose(left, right)
 
 
 @pytest.mark.slow
@@ -276,3 +322,36 @@ def test_use_synchronous():
     with dask.config.set(scheduler="synchronous"):
         ctx = Context.make_with("dask-integration")
         assert isinstance(ctx.executor, InlineJobExecutor)
+
+
+# not implemented in most executors, also only used for the clustered / caching
+# dataset stuff, which we are not using
+@pytest.mark.xfail
+@pytest.mark.slow
+def test_executor_run_each_partition(ctx: Context):
+    ds = ctx.load("memory", data=np.random.randint(0, 1024, size=(16, 16, 128, 128)))
+    partitions = ds.get_partitions()
+
+    def _per_partition(p):
+        assert p.__class__.__name__ == "MemPartition"
+        return 42
+
+    for res in ctx.executor.run_each_partition(partitions, _per_partition):
+        assert res == 42
+
+
+@pytest.mark.slow
+def test_executor_map(ctx: Context):
+    inp = [1, 2, 3]
+    exp = [2, 3, 4]
+    assert list(ctx.executor.map(lambda x: x + 1, inp)) == exp
+
+
+@pytest.mark.slow
+def test_executor_run_each_host(ctx: Context):
+    res = ctx.executor.run_each_host(lambda x: 42 + x, 1)
+    workers = ctx.executor.get_available_workers()
+    assert set(res.keys()) == workers.hosts()
+    for k, v in res.items():
+        assert k in workers.hosts()
+        assert v == 43

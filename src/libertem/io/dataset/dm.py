@@ -9,7 +9,7 @@ import numpy as np
 from libertem.common.math import prod
 from libertem.common import Shape
 from libertem.io.dataset.base.file import OffsetsSizes
-from libertem.web.messageconverter import MessageConverter
+from libertem.common.messageconverter import MessageConverter
 from .base import (
     DataSet, FileSet, BasePartition, DataSetException, DataSetMeta, File,
 )
@@ -92,7 +92,7 @@ class DMDataSet(DataSet):
 
     Note
     ----
-    You can use the PyPi package `natsort <https://pypi.org/project/natsort/>`_
+    You can use the PyPI package `natsort <https://pypi.org/project/natsort/>`_
     to sort the filenames by their numerical components, this is especially useful
     for filenames without leading zeros.
 

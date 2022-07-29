@@ -1,10 +1,13 @@
-|gitter|_ |azure|_ |github|_ |codeclimate|_ |precommit|_ |joss|_ |zenodo|_
+|docs|_ |gitter|_ |azure|_ |github|_ |codeclimate|_ |precommit|_ |joss|_ |zenodo|_
+
+.. |docs| image:: https://img.shields.io/badge/%F0%9F%95%AE-docs-green.svg
+.. _docs: https://libertem.github.io/LiberTEM/
 
 .. |gitter| image:: https://badges.gitter.im/Join%20Chat.svg
 .. _gitter: https://gitter.im/LiberTEM/Lobby
 
-.. |azure| image:: https://dev.azure.com/LiberTEM/LiberTEM/_apis/build/status/LiberTEM.LiberTEM?branchName=master
-.. _azure: https://dev.azure.com/LiberTEM/LiberTEM/_build/latest?definitionId=3&branchName=master
+.. |azure| image:: https://dev.azure.com/LiberTEM/LiberTEM/_apis/build/status/LiberTEM.LiberTEM-data?branchName=master
+.. _azure: https://dev.azure.com/LiberTEM/LiberTEM/_build/latest?definitionId=4&branchName=master
 
 .. |zenodo| image:: https://zenodo.org/badge/DOI/10.5281/zenodo.1477847.svg
 .. _zenodo: https://doi.org/10.5281/zenodo.1477847
@@ -93,7 +96,7 @@ or
 
 .. code-block:: shell
 
-    $ singularity run docker://libertem/libertem -- /venv/bin/libertem-server
+    $ singularity exec docker://libertem/libertem /venv/bin/libertem-server
 
 Deployment for offline data processing on a single-node system for a local user
 is thoroughly tested and can be considered stable. Deployment on a cluster is
@@ -135,7 +138,7 @@ applications, including live data streams. `Contact us
 LiberTEM is evolving rapidly and prioritizes features following user demand and
 contributions. Currently we are working on `live data processing
 <https://github.com/LiberTEM/LiberTEM-live>`_, `integration with Dask arrays and
-Hyperspy <https://github.com/LiberTEM/LiberTEM/issues/922>`_, support for sparse
+HyperSpy <https://github.com/LiberTEM/LiberTEM/issues/922>`_, support for sparse
 data, and implementing analysis methods for various applications of pixelated
 STEM and other large-scale detector data. If you like to influence the direction
 this project is taking, or if you'd like to `contribute
@@ -154,6 +157,7 @@ documentation
 information!
 
 - Raw binary files
+- NumPy .npy binary files
 - Thermo Fisher EMPAD detector :cite:`Tate2016` files
 - `Quantum Detectors MIB format <http://quantumdetectors.com/wp-content/uploads/2017/01/1532-Merlin-for-EM-Technical-Datasheet-v2.pdf>`_
 - Nanomegas .blo block files
@@ -163,7 +167,7 @@ information!
 - FRMS6 from PNDetector pnCCD cameras :cite:`Simson2015` (currently alpha, gain correction still needs UI changes)
 - FEI SER files (via `openNCEM <https://github.com/ercius/openNCEM>`_)
 - MRC (via `openNCEM <https://github.com/ercius/openNCEM>`_)
-- HDF5-based formats such as Hyperspy files, NeXus and EMD
+- HDF5-based formats such as HyperSpy files, NeXus and EMD
 - TVIPS binary files
 - Please contact us if you are interested in support for an additional format!
 
@@ -171,7 +175,7 @@ Detectors (experimental)
 ------------------------
 
 Currently the Quantum Detectors Merlin camera is supported for live processing.
-Support for the Gatan K2 IS camera is in a prototype state. Please
+Support for DECTRIS cameras and the Gatan K2 IS camera are in a prototype state. Please
 `contact us <https://gitter.im/LiberTEM/Lobby>`_ if you are interested in this
 feature! See https://github.com/LiberTEM/LiberTEM-live for more details on live
 processing.

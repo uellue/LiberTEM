@@ -125,6 +125,7 @@ def test_comparison_3d_roi(dm_stack_of_3d, default_dm_3d_raw, lt_ctx_fast):
 @pytest.mark.parametrize(
     "with_roi", (True, False)
 )
+@pytest.mark.slow
 def test_correction(default_dm, lt_ctx, with_roi):
     ds = default_dm
 
@@ -145,6 +146,28 @@ def test_detect_1(lt_ctx):
     )["parameters"] == {
         'files': [fpath],
     }
+
+
+def test_get_metadata():
+    import distributed
+    from libertem.api import Context
+    from libertem.io.dataset.dm import _get_metadata
+
+    with distributed.Client(
+            n_workers=2,
+            threads_per_worker=1,
+            processes=False
+    ) as _:
+        ctx = Context.make_with("dask-integration")
+        fpath = os.path.join(DM_TESTDATA_PATH, '2018-7-17 15_29_0000.dm4')
+        ctx.executor.run_function(lambda: _get_metadata(fpath))
+
+
+def test_get_metadata_2():
+    from libertem.io.dataset.dm import _get_metadata
+
+    fpath = os.path.join(DM_TESTDATA_PATH, '2018-7-17 15_29_0000.dm4')
+    _get_metadata(fpath)
 
 
 def test_detect_2(lt_ctx):
@@ -355,6 +378,7 @@ def test_offset_greater_than_image_count(lt_ctx):
     )
 
 
+@pytest.mark.slow
 def test_reshape_nav(lt_ctx):
     udf = SumSigUDF()
     files = list(sorted(glob(os.path.join(DM_TESTDATA_PATH, '*.dm4'))))

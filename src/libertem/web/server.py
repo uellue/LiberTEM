@@ -6,6 +6,7 @@ import signal
 import select
 import threading
 import webbrowser
+import ipaddress
 from functools import partial
 import hmac
 import hashlib
@@ -151,15 +152,10 @@ def sig_exit(signum, frame, shared_state):
     )
 
 
-def main(host, port, numeric_level, event_registry, shared_state, token):
-    logging.basicConfig(
-        level=numeric_level,
-        format="[%(asctime)s] %(levelname)s [%(name)s.%(funcName)s:%(lineno)d] %(message)s",
-    )
-    log.info(f"listening on {host}:{port}")
+def main(bound_sockets, event_registry, shared_state, token):
     app = make_app(event_registry, shared_state, token)
     http_server = tornado.httpserver.HTTPServer(app)
-    http_server.listen(address=host, port=port)
+    http_server.add_sockets(bound_sockets)
     return http_server
 
 
@@ -200,16 +196,45 @@ def handle_signal(shared_state):
         signal.signal(signal.SIGINT, partial(sig_exit, shared_state=shared_state))
 
 
-def run(host, port, browser, local_directory, numeric_level, token, preload):
+def port_from_sockets(*sockets):
+    ports = tuple(s.getsockname()[1] for s in sockets)
+    assert ports, 'No sockets'
+    return ports[0]
+
+
+def run(host, port, browser, local_directory, numeric_level, token, preload, strict_port):
+    logging.basicConfig(
+        level=numeric_level,
+        format="[%(asctime)s] %(levelname)s [%(name)s.%(funcName)s:%(lineno)d] %(message)s",
+    )
+
     # shared state:
     event_registry = EventRegistry()
     shared_state = SharedState()
 
     shared_state.set_local_directory(local_directory)
     shared_state.set_preload(preload)
-    main(host, port, numeric_level, event_registry, shared_state, token)
+
+    try:
+        bound_sockets = tornado.netutil.bind_sockets(port, host)
+    except OSError as e:
+        if strict_port:
+            raise e
+        bound_sockets = tornado.netutil.bind_sockets(0, host)
+        _port = port_from_sockets(*bound_sockets)
+        log.info(f"port {port} already in use, using random open port {_port}")
+        port = _port
+
+    main(bound_sockets, event_registry, shared_state, token)
+
+    try:
+        is_ipv6 = isinstance(ipaddress.ip_address(host), ipaddress.IPv6Address)
+    except ValueError:
+        is_ipv6 = False
+    url = f'http://[{host}]:{port}' if is_ipv6 else f'http://{host}:{port}'
+    log.info(f"listening on {url}")
     if browser:
-        webbrowser.open(f'http://{host}:{port}')
+        webbrowser.open(url)
     loop = asyncio.get_event_loop()
     handle_signal(shared_state)
     # Strictly necessary only on Windows, but doesn't do harm in any case.

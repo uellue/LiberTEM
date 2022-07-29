@@ -3,7 +3,7 @@ import * as React from "react";
 import { Button, Form } from "semantic-ui-react";
 import { Omit } from "../../helpers/types";
 import { DatasetInfoBLO, DatasetParamsBLO, DatasetTypes } from "../../messages";
-import { getInitial, getInitialName, parseNumList, validateSyncOffsetAndSigShape, withValidation } from "../helpers";
+import { getInitial, getInitialName, adjustShapeWithBounds, parseShapeInCommaSeparatedString, validateSyncOffsetAndSigShape, withValidation } from "../helpers";
 import { OpenFormProps } from "../types";
 import BackendSelectionDropdown from "./BackendSelectionDropdown";
 import Reshape from "./Reshape";
@@ -29,6 +29,7 @@ const BLOFileParamsForm: React.FC<MergedProps> = ({
     isValidating,
     onCancel,
     setFieldValue,
+    setFieldTouched,
     datasetTypeInfo,
 }) => (
     <Form onSubmit={handleSubmit}>
@@ -45,7 +46,7 @@ const BLOFileParamsForm: React.FC<MergedProps> = ({
                 datasetTypeInfo={datasetTypeInfo}
                 setFieldValue={setFieldValue} />
         </Form.Field>
-        <Reshape navShape={values.nav_shape} sigShape={values.sig_shape} syncOffset={values.sync_offset} imageCount={info?.image_count} setFieldValue={setFieldValue} />
+        <Reshape navShape={values.nav_shape} sigShape={values.sig_shape} syncOffset={values.sync_offset} imageCount={info?.image_count} setFieldValue={setFieldValue} setFieldTouched={setFieldTouched} />
         <Button primary type="submit" disabled={isSubmitting || isValidating}>Load Dataset</Button>
         <Button type="button" onClick={onCancel}>Cancel</Button>
         <Button type="button" onClick={handleReset}>Reset</Button>
@@ -55,8 +56,8 @@ const BLOFileParamsForm: React.FC<MergedProps> = ({
 export default withValidation<DatasetParamsBLO, DatasetParamsBLOForForm, DatasetInfoBLO>({
     mapPropsToValues: ({ path, initial }) => ({
         name: getInitialName("name", path, initial),
-        nav_shape: getInitial("nav_shape", "", initial).toString(),
-        sig_shape: getInitial("sig_shape", "", initial).toString(),
+        nav_shape: adjustShapeWithBounds(getInitial("nav_shape", "", initial).toString(), "nav"),
+        sig_shape: adjustShapeWithBounds(getInitial("sig_shape", "", initial).toString(), "sig"),
         sync_offset: getInitial("sync_offset", 0, initial),
         io_backend: getInitial("io_backend", undefined, initial),
     }),
@@ -64,8 +65,8 @@ export default withValidation<DatasetParamsBLO, DatasetParamsBLOForForm, Dataset
         path,
         type: DatasetTypes.BLO,
         name: values.name,
-        nav_shape: parseNumList(values.nav_shape),
-        sig_shape: parseNumList(values.sig_shape),
+        nav_shape: parseShapeInCommaSeparatedString(values.nav_shape),
+        sig_shape: parseShapeInCommaSeparatedString(values.sig_shape),
         sync_offset: values.sync_offset,
         io_backend: values.io_backend,
     }),

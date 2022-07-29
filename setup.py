@@ -157,7 +157,6 @@ setup(
         'scikit-learn',
         'tqdm',
         'threadpoolctl>=3.0',
-        'primesieve',
         'nbformat',
         'nbconvert',
         'autopep8',
@@ -165,13 +164,22 @@ setup(
         'defusedxml',
         'async_generator',  # backwards-compat. for contextlib.asynccontextmanager
         'typing-extensions',  # backwards-compatibility for newer typing constructs
+        'opentelemetry-api',
+        'tblib',
     ],
     extras_require={
-        'torch': 'torch',
+        # NumPy interfacing issue on Win 11, Python 3.10
+        # Likely caused by other packages constraining NumPy version to <1.23
+        # FIXME recheck later again
+        'torch': 'torch<1.12',
         'hdbscan': 'hdbscan',
         'cupy': 'cupy',
         'bqplot': ['bqplot', 'bqplot-image-gl', 'ipython'],
-        'hdf5plugin': 'hdf5plugin'
+        'hdf5plugin': 'hdf5plugin',
+        'tracing': [
+            'opentelemetry-distro',
+            'opentelemetry-exporter-otlp',
+        ],
     },
     package_dir={"": "src"},
     packages=find_packages(where='src'),
@@ -199,6 +207,8 @@ setup(
         'Programming Language :: Python :: 3.6',
         'Programming Language :: Python :: 3.7',
         'Programming Language :: Python :: 3.8',
+        'Programming Language :: Python :: 3.9',
+        'Programming Language :: Python :: 3.10',
         'License :: OSI Approved :: GNU General Public License v3 (GPLv3)',
         'License :: OSI Approved :: MIT License',
         'Operating System :: POSIX :: Linux',

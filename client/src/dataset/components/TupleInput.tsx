@@ -1,6 +1,5 @@
 import * as React from "react";
 import { Button, Form } from "semantic-ui-react";
-import { parseNumListWithPadding } from "../helpers";
 import TupleInputPart from "./TupleInputPart";
 
 interface TupleInputProps {
@@ -9,10 +8,13 @@ interface TupleInputProps {
   maxLen: number,
   fieldName: string,
   setFieldValue: (field: string, value: any, shouldValidate?: boolean) => void,
+  setFieldTouched: (field: string, shouldValidate?: boolean) => void,
 }
 
-const TupleInput: React.FC<TupleInputProps> = ({ value, minLen, maxLen, fieldName, setFieldValue }) => {
-  const tupleInputValue = parseNumListWithPadding(value, minLen, maxLen);
+const TupleInput: React.FC<TupleInputProps> = ({
+    value, minLen, maxLen, fieldName, setFieldValue, setFieldTouched,
+}) => {
+  const tupleInputValue = value.split(",");
 
   const tupleInputRefsArray = React.useRef<HTMLInputElement[]>([]);
 
@@ -20,6 +22,10 @@ const TupleInput: React.FC<TupleInputProps> = ({ value, minLen, maxLen, fieldNam
     const newTupleInputValue = [...tupleInputValue];
     newTupleInputValue[idx] = val;
     setFieldValue(fieldName, newTupleInputValue.toString());
+  };
+
+  const handleBlur = () => {
+      setFieldTouched(fieldName, true);
   };
 
   const commaPressHandle = (idx: number) => {
@@ -37,21 +43,24 @@ const TupleInput: React.FC<TupleInputProps> = ({ value, minLen, maxLen, fieldNam
       setFieldValue(fieldName, newTupleInputValue.toString());
     }
   }
-  /* Fix this auto focus bug when GUI supports n-D visualizations */
-  /* React.useEffect(() => {
-    if(tupleInputValue.length === tupleInputRefsArray.current.length + 1) {
-      tupleInputRefsArray.current[tupleInputValue.length+1].focus();
-    }
-  }, [tupleInputValue, tupleInputRefsArray]); */
 
   const delTupleDim = () => {
     if (tupleInputValue.length > minLen) {
       const newTupleInputValue = [...tupleInputValue];
       newTupleInputValue.pop();
       setFieldValue(fieldName, newTupleInputValue.toString());
-      tupleInputRefsArray.current[tupleInputValue.length - 2].focus()
     }
   }
+  
+  const initialRender = React.useRef(true);
+  
+  React.useEffect(() => {
+    if (!initialRender.current && tupleInputRefsArray.current.length - 1) {
+      tupleInputRefsArray.current[tupleInputValue.length - 1].focus();
+    } else {
+      initialRender.current = false;
+    }
+  }, [tupleInputValue.length]);
 
   return (
     <>
@@ -64,9 +73,10 @@ const TupleInput: React.FC<TupleInputProps> = ({ value, minLen, maxLen, fieldNam
                 tupleKey={idx}  
                 name={`${fieldName}_${idx}`}
                 id={`id_${fieldName}_${idx}`}
-                value={+val}
+                value={parseInt(val, 10)}
                 tupleRef={tupleRef}
                 tupleInputChangeHandle={tupleInputChangeHandle}
+                onBlur={handleBlur}
                 commaPressHandle={commaPressHandle} />
             </Form.Field>
           );

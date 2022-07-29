@@ -24,11 +24,18 @@ are based on Dask arrays. That means Dask arrays can serve as input for LiberTEM
 UDF computations can produce Dask arrays. Additionally,
 :meth:`~libertem.contrib.daskadapter.make_dask_array` can create Dask arrays from LiberTEM datasets.
 
-This can be used to combine features from Hyperspy and LiberTEM in a single analysis workflow:
+Linking with HyperSpy Lazy Signals
+----------------------------------
+
+LiberTEM's Dask integration features can be used to combine features from
+HyperSpy and LiberTEM in a single analysis workflow:
 
 .. toctree::
+   :maxdepth: 2
 
    hyperspy-integration
+
+.. _`scheduler`:
 
 Scheduler
 ---------
@@ -39,19 +46,24 @@ uses the Dask :code:`Client` internally to make sure existing workflows keep run
 as before. However, for a closer integration it can be beneficial to use the same scheduler
 for both LiberTEM and other Dask computations. There are several options for that:
 
-:Set LiberTEM Dask cluster as default Dask scheduler:
-    * Use :code:`Context.make_with('dask-make-default')`
-    * Pass :code:`client_kwargs={'set_as_default': True}` to
-      :meth:`~libertem.executor.dask.DaskJobExecutor.connect` or
-      :meth:`~libertem.executor.dask.DaskJobExecutor.make_local`
-:Use existing Dask scheduler:
-    * Use :code:`Context.make_with('dask-integration')` to start an executor
-      that is compatible with the current Dask scheduler.
-:Use dask.delayed:
-    * :class:`libertem.executor.delayed.DelayedJobExecutor` can
-      return UDF computations as Dask arrays. The scheduler will only be
-      determined when :code:`compute()` is called downstream using the normal
-      mechanisms of Dask.
+* Set the LiberTEM Dask cluster as default Dask scheduler:
+
+    * Use :code:`Context.make_with('dask-make-default')` (:meth:`~libertem.api.Context.make_with`)
+    * Pass :code:`client_kwargs={'set_as_default': True}` 
+      to :meth:`~libertem.executor.dask.DaskJobExecutor.connect` 
+      or :meth:`~libertem.executor.dask.DaskJobExecutor.make_local`
+
+* Use an existing Dask scheduler:
+
+    * Use :code:`Context.make_with('dask-integration')` to start 
+      an executor that is compatible with the current Dask scheduler.
+
+* Use dask.delayed:
+
+    * :class:`libertem.executor.delayed.DelayedJobExecutor` can 
+      return UDF computations as Dask arrays. The scheduler will only be  
+      determined when :code:`compute()` is called downstream using the 
+      normal mechanisms of Dask.
 
 .. _daskarray:
 
@@ -82,11 +94,11 @@ Load Dask arrays as datasets
 ----------------------------
 
 LiberTEM datasets can be created from Dask arrays by using
-:meth:`libertem.api.context.load` with filetype :code:`'dask'`. See
+:meth:`libertem.api.Context.load` with filetype :code:`'dask'`. See
 :ref:`daskds` for details. The performance can vary and depends on chunking,
 executor, I/O method and Dask array creation method. Please `contact us
 <https://gitter.im/LiberTEM/Lobby>`_ or `create an Issue
-<https://github.com/LiberTEM/LiberTEM/issues/new>` for questions, bug reports
+<https://github.com/LiberTEM/LiberTEM/issues/new>`_ for questions, bug reports
 and other feedback!
 
 This basic example shows running a UDF on a Dask array:
@@ -112,6 +124,8 @@ This basic example shows running a UDF on a Dask array:
 
 See also :ref:`executors` on how to set up compatible schedulers for
 both Dask and LiberTEM.
+
+.. _`delayed_udfs`:
 
 Create Dask arrays with UDFs
 ----------------------------
@@ -157,9 +171,15 @@ computation over the dataset. By default, Dask does not cache intermediate
 results from prior runs, so individual calls to :code:`compute()` require
 a complete re-run of the UDFs that were passed to :code:`run_udf`.
 
+.. _`merge_all`:
+
+.. _dask merge_all:
 
 Merge function for Dask array results
 -------------------------------------
+
+.. note::
+    See :ref:`udf merge_all` for more information.
 
 LiberTEM already uses an efficient default merging method to create Dask arrays
 for UDFs that only use :code:`kind='nav'` buffers and don't specify their own
@@ -244,12 +264,20 @@ variant was twice as fast as the built-in wrapper.
         result2['intensity'].raw_data,
     )
 
-The argument :code:`ordered_results` is an ordered dictionary of all partial
-results for that UDF indexed by the slice for the corresponding dataset
-partition in the flattened navigation dimension with ROI applied. The order of
-the partial results is such that the slices are increasing through the dataset
-navigation dimension, so the merge method can safely concatenate the results in
-the case of :code:`'nav'`-shaped results.
+The argument :code:`ordered_results` is a dictionary of partial results
+results for that UDF. The dictionary is keyed by :class:`~libertem.common.slice.Slice`
+objects, one for each partition processed, and is ordered in the flat navigation dimension.
+Each partial result is itself a dictionary with a key for each result declared in
+:code:`udf.get_result_buffers()`. The :code:`ordered_results` dictionary is created
+such that the :code:`merge_all` method can safely concatenate the elements in the case
+of :code:`'nav'`-shaped results. Any applied ROI is automatically taken into account
+after the call to :code:`merge_all`. 
+
+The return value from the function must be a dictionary of merged result arrays
+with the keys matching the declared result buffers. There is, however, no requirement
+to return merged results for all existing buffers, though any that are missing will not
+contain results from the computation and are likely to be filled with zeros.
+
 
 CUDA and scheduling
 -------------------
@@ -262,3 +290,10 @@ will require passing the appropriate tags as :code:`resources` argument to :code
 
 :meth:`libertem.executor.delayed.DelayedJobExecutor.get_resources_from_udfs` returns
 the appropriate resources for a given set of UDFs based on their capabilities.
+
+.. note::
+    At this time the combination of CUDA-requiring UDFs and
+    :class:`~libertem.executor.delayed.DelayedJobExecutor` is not well-tested.
+    At a minimum, the merge process carried out on the main node
+    will not take place with GPU-backed Dask arrays, though this is
+    under consideration for the future.

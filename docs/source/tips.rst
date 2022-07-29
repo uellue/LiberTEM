@@ -9,7 +9,7 @@ Using SSH forwarding
 --------------------
 
 As there is no built-in authentication yet, LiberTEM should not listen on a network
-port where untrusted parties have access. You can use ssh port forwarding from `localhost` instead
+port where untrusted parties have access. You can use ssh port forwarding from :code:`localhost` instead
 to access LiberTEM from a different computer.
 
 For example with conda:
@@ -24,7 +24,7 @@ Or, with virtualenv:
 
      $ ssh -L 9000:localhost:9000 <remote-hostname> "/path/to/virtualenv/bin/libertem-server"
 
-This makes LiberTEM, which is running on `remote-hostname`, available on your
+This makes LiberTEM, which is running on :code:`remote-hostname`, available on your
 local host via http://localhost:9000/
 
 Alternatively, you can launch and access LiberTEM on remote systems through
@@ -170,7 +170,7 @@ for details. If you are using :code:`pytest` directly, you can use the
      5.75s call     tests/test_analysis_masks.py::test_avoid_calculating_masks_on_client
     = 288 passed, 66 skipped, 6 deselected, 2 xfailed, 7 warnings in 260.65 seconds =
 
-Please note that functional tests which involve starting a local cluster have
+Please note that tests which involve starting a local cluster have
 long lead times that are hard to avoid.
 
 In order to gain more information on what slows down a particular test, you can

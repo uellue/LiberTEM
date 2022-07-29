@@ -579,20 +579,20 @@ Threading
 ---------
 
 By default, LiberTEM uses multiprocessing with one process per CPU core for
-offline processing. In that scenario, UDFs should only use a single thread to
-avoid oversubscription.
+offline processing, using the class :class:`~libertem.executor.dask.DaskJobExecutor`. 
+In that scenario, UDFs should only use a single thread to avoid oversubscription.
 
 However, when running with a single-process single-thread executor like
 :class:`~libertem.executor.inline.InlineJobExecutor`, multiple threads can be
 used. This is particularly relevant to optimize performance for live processing
 in `LiberTEM-live <https://libertem.github.io/LiberTEM-live/>`_ since that may
 only be using a single process. The thread count for many common numerics
-libraries is set automatically, see
+libraries is set automatically by LiberTEM, see
 :attr:`~libertem.udf.base.UDFMeta.threads_per_worker`. For other cases the
 thread count on a worker should be set by the user according to
 :code:`self.meta.threads_per_worker`.
 
-Multithreaded executors are introduced with release 0.9, see :ref:`executors`.
+Multithreaded executors are introduced with release 0.9.0, see :ref:`executors`.
 They run UDF functions in parallel threads within the same process. This can
 introduce issues with thread safety, for example shared objects being changed
 concurrently by multiple threads. The LiberTEM internals and core UDFs are
@@ -611,7 +611,7 @@ with pyFFTW, users could use the `builder interface of PyFFTW
 or `use the native FFTW object interface
 <https://pyfftw.readthedocs.io/en/latest/source/pyfftw/pyfftw.html#pyfftw.FFTW>`_.
 
-Running multiple LiberTEM :class:`~libertem.api.Context` objects resp. executors
+Running multiple LiberTEM :class:`~libertem.api.Context` objects or executors
 in parallel threads is not tested and can lead to unexpected interactions.
 
 .. _auto UDF:
@@ -658,3 +658,84 @@ Example: Calculate sum over the last signal axis.
 
     udf = AutoUDF(f=functools.partial(np.sum, axis=-1))
     result = ctx.run_udf(dataset=dataset, udf=udf)
+
+.. _udf merge_all:
+
+One-step merge (`merge_all`)
+----------------------------
+
+.. versionadded:: 0.9.0
+
+.. note::
+    The interface described here is experimental and therefore subject to change.
+    See :ref:`dask merge_all` for more information.
+
+With the release of the :class:`~libertem.executor.delayed.DelayedJobExecutor`
+UDFs have the option to define a method :code:`merge_all()` which is
+used by this executor to perform a one-step merge of the results from all
+partitions. This is only applied by this executor, and as a result is only
+used when computing with :code:`dask.delayed`.
+
+In the case of :code:`kind='nav'` result buffers, only, and no custom merge logic,
+the :code:`merge_all` implementation is automatically provided by the base
+UDF class. If no :code:`merge_all` is provided, the standard :code:`merge`
+function is used via a different mechanism.
+
+.. note::
+    When using :code:`merge_all`, no attempt is made to verify that it functions
+    identically to the `merge` function, which remains a requirement of the
+    UDF implementation if implementing a custom merge and using other executors.
+
+The :code:`merge_all` function must have the following signature:
+
+.. code-block:: python
+
+    def merge_all(self, ordered_results):
+        ...
+        return {result_name: merged_result_array, ...}
+
+where :code:`ordered_results` is an ordered dictionary mapping between the
+:class:`~libertem.common.slice.Slice` for each partition and a dictionary
+of partial results keyed by result_name.
+
+An example :code:`merge_all` to `sum` all partial results for a :code:`kind='sig'`
+result buffer named :code:`'intensity'` would be the following:
+
+.. code-block:: python
+
+    def merge_all(self, ordered_results):
+        intensity = np.stack([b.intensity for b in ordered_results.values()]).sum(axis=0)
+        return {
+            'intensity': intensity
+        }
+
+The ordering of the partial results is such that the :class:`~libertem.common.slice.Slice`
+objects which are the dictionary keys are sequential in the flattened navigation
+dimension. The user can therefore safely concatenate the partial results
+for a given result buffer to get a whole-analysis-sized array with a flat
+navigation dimension. In the case of :code:`kind='nav'` buffers the returned
+arrays must be in this same flat navigation shape.
+
+When an ROI has been provided while running the UDF, the number of elements in
+the partial results will correspond to the number of valid ROI pixels; the concatenated
+result will be reshaped into a full dataset-sized array by LiberTEM
+after :code:`merge_all` has been called.
+
+.. note::
+    When using :class:`~libertem.executor.delayed.DelayedJobExecutor` and
+    in particular :code:`merge_all`, the user is operating directly on
+    `dask.array.Array <https://docs.dask.org/en/stable/array.html>`_
+    objects built for lazy computation. The Dask API is largely compatible
+    with numpy, and will lazily build a task graph from normal numpy
+    functions (e.g. :code:`np.stack(arrays).sum()` above). However, care
+    must be taken to avoid triggering eager execution accidentally, for
+    example by casting using Python builtins such as :code:`int(dask_value)`.
+    For a degree of certainty, the user is encouraged to consider the
+    `Dask Array API <https://docs.dask.org/en/latest/array-api.html>`_ when
+    building `merge_all` functions. The same advice applies to any
+    post-processing applied after merging (:ref:`udf final post processing`).
+
+The return value from :code:`merge_all` must be a dictionary of merged result arrays
+with the keys matching the declared result buffers. There is, however, no requirement
+to return merged results for all existing buffers, though any that are missing will not
+contain results from the computation and are likely to be filled with zeros.

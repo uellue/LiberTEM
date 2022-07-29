@@ -1,35 +1,79 @@
 import math
 import logging
 import warnings
-from typing import List, TYPE_CHECKING, Optional, Tuple
+from typing import List, TYPE_CHECKING, Optional, Tuple, Union, Sequence
+from typing_extensions import Literal
 
 import numpy as np
 
-from libertem.corrections import CorrectionSet
+from libertem.io.corrections import CorrectionSet
 from libertem.common import Shape, Slice
 from libertem.common.math import prod
+from libertem.common.udf import UDFProtocol
 
 if TYPE_CHECKING:
     from numpy import typing as nt
-    from libertem.udf.base import UDF
-    from libertem.io.dataset.base import DataSet
+    from libertem.io.dataset.base import DataSet, Partition
 
 log = logging.getLogger(__name__)
 
+TilingIntent = Union[Literal["partition"], Literal["frame"], Literal["tile"]]
+
 
 class TilingScheme:
-    def __init__(self, slices: List[Slice],
-                 tileshape: Shape, dataset_shape: Shape, debug=None):
+    def __init__(
+        self, slices: List[Slice],
+        tileshape: Shape, dataset_shape: Shape, intent: Optional[TilingIntent] = None, debug=None
+    ):
         self._slices = slices
         self._tileshape = tileshape
         self._dataset_shape = dataset_shape
         self._debug = debug
+        self._intent = intent
 
         if tileshape.nav.dims > 1:
             raise ValueError("tileshape should have flat navigation dimensions")
 
+    def adjust_for_partition(self, partition: "Partition") -> "TilingScheme":
+        """
+        If the intent is per-partition processing, the tiling scheme must match the
+        partition shape exactly. If there is a mismatch, this method returns a
+        new scheme that matches the partition.
+
+        Parameters
+        ----------
+        partition
+            The Partition we want to adjust the tiling scheme to.
+
+        Returns
+        -------
+        TilingScheme
+            The adjusted tiling scheme, or this one, if it matches exactly
+        """
+        partition_size = partition.slice.shape.nav.size
+        if partition_size != self.depth and self.intent == "partition":
+            # adjust depth to match partition size exactly:
+            new_shape = Shape(
+                (partition_size,) + tuple(self._tileshape.sig),
+                sig_dims=self._tileshape.sig.dims
+            )
+            return TilingScheme(
+                slices=self._slices,
+                tileshape=new_shape,
+                dataset_shape=self._dataset_shape,
+                intent=self._intent,
+                debug=self._debug,
+            )
+        return self
+
     @classmethod
-    def make_for_shape(cls, tileshape: Shape, dataset_shape: Shape, debug=None) -> "TilingScheme":
+    def make_for_shape(
+        cls,
+        tileshape: Shape,
+        dataset_shape: Shape,
+        intent: Optional[TilingIntent] = None,
+        debug=None,
+    ) -> "TilingScheme":
         """
         Make a TilingScheme from `tileshape` and `dataset_shape`.
 
@@ -48,6 +92,10 @@ class TilingScheme:
 
         dataset_shape
             Shape of the whole data set. Only the signal part is used.
+
+        intent
+            The intent of this scheme (whole partitions, frames or tiles)
+            Needs to be set for correct per-partition tiling!
         """
         # FIXME: validate navigation part of the tileshape to be contiguous
         # (i.e. a shape like (1, 1, ..., 1, X1, ..., XN))
@@ -64,9 +112,10 @@ class TilingScheme:
             tileshape=tileshape,
             dataset_shape=dataset_shape,
             debug=debug,
+            intent=intent,
         )
 
-    def __getitem__(self, idx) -> Slice:
+    def __getitem__(self, idx: int) -> Slice:
         return self._slices[idx]
 
     def __len__(self):
@@ -77,6 +126,10 @@ class TilingScheme:
         return "<TilingScheme (depth=%d) shapes=%r len=%d>" % (
             self.depth, unique_shapes, len(self._slices),
         )
+
+    @property
+    def intent(self) -> Optional[TilingIntent]:
+        return self._intent
 
     @property
     def slices(self):
@@ -164,7 +217,7 @@ class Negotiator:
 
     def get_scheme(
             self,
-            udfs,
+            udfs: Sequence[UDFProtocol],
             dataset,
             read_dtype: "nt.DTypeLike",
             approx_partition_shape: Shape,
@@ -179,8 +232,8 @@ class Negotiator:
         Parameters
         ----------
 
-        udfs : List[UDF]
-            The concrete UDF to optimize the tiling scheme for.
+        udfs : Sequence[UDFProtocol]
+            The concrete UDFs to optimize the tiling scheme for.
             Depending on the method (tile, frame, partition)
             and preferred total input size and depth.
 
@@ -219,16 +272,15 @@ class Negotiator:
         depth = max(depths)  # take the largest min-depth
         base_shape = self._get_base_shape(udfs, dataset, approx_partition_shape, roi)
 
+        intent = self._get_intent(udfs)
+
         sizes = [
             self._get_size(
                 io_max_size, udf, itemsize, approx_partition_shape, base_shape,
             )
             for udf in udfs
         ]
-        if any(
-            udf.get_method() == "partition"
-            for udf in udfs
-        ):
+        if intent == "partition":
             size = max(sizes)  # by partition wants to be big, ...
         else:
             size = min(sizes)
@@ -293,6 +345,7 @@ class Negotiator:
         return TilingScheme.make_for_shape(
             tileshape=Shape(tileshape, sig_dims=ds_sig_shape.dims),
             dataset_shape=dataset.shape,
+            intent=intent,
             debug={
                 "min_factors": min_factors,
                 "factors": factors,
@@ -363,15 +416,36 @@ class Negotiator:
         # FIXME: adjust size to L3 // number of workers per node
         return 1*2**20
 
-    def _get_udf_size_pref(self, udf):
-        from libertem.udf import UDF
+    def _get_udf_size_pref(self, udf: UDFProtocol):
         udf_prefs = udf.get_tiling_preferences()
         size = udf_prefs.get("total_size", np.inf)
-        if size is UDF.TILE_SIZE_BEST_FIT:
+        if size is UDFProtocol.TILE_SIZE_BEST_FIT:
             size = self._get_default_size()
         return size
 
-    def _get_size(self, io_max_size, udf, itemsize, approx_partition_shape: Shape, base_shape):
+    def _get_intent(self, udfs: Sequence[UDFProtocol]) -> TilingIntent:
+        intent: Optional[TilingIntent] = None
+        if any(
+            udf.get_method() == "tile"
+            for udf in udfs
+        ):
+            intent = "tile"
+        if any(
+            udf.get_method() == "frame"
+            for udf in udfs
+        ):
+            intent = "frame"
+        if any(
+            udf.get_method() == "partition"
+            for udf in udfs
+        ):
+            intent = "partition"
+        assert intent is not None
+        return intent
+
+    def _get_size(
+            self, io_max_size, udf: UDFProtocol, itemsize,
+            approx_partition_shape: Shape, base_shape):
         """
         Calculate the maximum tile size in bytes
         """
@@ -397,7 +471,7 @@ class Negotiator:
 
     def _get_base_shape(
         self,
-        udfs: List["UDF"],
+        udfs: Sequence["UDFProtocol"],
         dataset: "DataSet",
         approx_partition_shape: Shape,
         roi: Optional[np.ndarray],
@@ -416,17 +490,16 @@ class Negotiator:
             ).sig
         return base_shape
 
-    def _get_udf_depth_pref(self, udf: "UDF", approx_partition_shape: Shape) -> int:
-        from libertem.udf import UDF
+    def _get_udf_depth_pref(self, udf: "UDFProtocol", approx_partition_shape: Shape) -> int:
         udf_prefs = udf.get_tiling_preferences()
-        depth = udf_prefs.get("depth", UDF.TILE_DEPTH_DEFAULT)
-        if depth is UDF.TILE_DEPTH_DEFAULT:
+        depth = udf_prefs.get("depth", UDFProtocol.TILE_DEPTH_DEFAULT)
+        if depth is UDFProtocol.TILE_DEPTH_DEFAULT:
             depth = 32
         if depth > approx_partition_shape[0]:
             depth = approx_partition_shape[0]
         return depth
 
-    def _get_min_depth(self, udf: "UDF", approx_partition_shape: Shape) -> int:
+    def _get_min_depth(self, udf: "UDFProtocol", approx_partition_shape: Shape) -> int:
         udf_method = udf.get_method()
 
         if udf_method == "partition":

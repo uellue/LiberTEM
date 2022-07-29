@@ -88,7 +88,7 @@ master_doc = 'index'
 #
 # This is also used if you do content translation via gettext catalogs.
 # Usually you set "language" from the command line for these cases.
-language = None
+language = "en"
 
 # List of patterns, relative to source directory, that match files and
 # directories to ignore when looking for source files.
@@ -209,16 +209,15 @@ todo_include_todos = True
 
 intersphinx_mapping = {
     'numpy': ('https://numpy.org/doc/stable/', None),
-    'python': ('https://docs.python.org/3.7', None),
+    'python': ('https://docs.python.org/3.10', None),
     'libertem_blobfinder': ('https://libertem.github.io/LiberTEM-blobfinder/', None),
+    'ptychography40': ('https://ptychography-4-0.github.io/ptychography/', None),
 }
 
 # Sphinx' link checker.
 linkcheck_ignore = [
     # Local URLs:
     r'^http://localhost.*',
-    # Some kind of user agent filtering
-    r'^https://pydata.org.*',
     # Freezes the link checker for unknown reasons within CI, hard to reproduce
     r'http://quantumdetectors.com/wp-content/uploads/2017/01/1532-Merlin-for-EM-Technical-Datasheet-v2.pdf',  # NOQA: E501
     # Apparently only for project members

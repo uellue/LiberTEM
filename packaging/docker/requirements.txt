@@ -108,7 +108,7 @@ numba==0.54.1
     # via
     #   libertem (../../setup.py)
     #   sparse
-numpy==1.21.0
+numpy==1.22.0
     # via
     #   empyre
     #   h5py
@@ -134,7 +134,7 @@ pandocfilters==1.5.0
     # via nbconvert
 partd==1.2.0
     # via dask
-pillow==9.0.0
+pillow==9.0.1
     # via
     #   empyre
     #   imageio

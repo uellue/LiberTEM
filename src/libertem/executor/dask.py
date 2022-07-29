@@ -6,17 +6,18 @@ import signal
 from typing import Iterable, Any, Optional, Tuple
 
 from dask import distributed as dd
-import distributed
+import dask
 
-from libertem.utils.threading import set_num_threads_env
+from libertem.common.threading import set_num_threads_env
 
-from .base import (
-    JobExecutor, JobCancelledError, TaskProtocol, sync_to_async, AsyncAdapter,
-    Environment,
+from .base import BaseJobExecutor, AsyncAdapter
+from libertem.common.executor import (
+    JobCancelledError, TaskCommHandler, TaskProtocol, Environment,
 )
-from .scheduler import Worker, WorkerSet
+from libertem.common.async_utils import sync_to_async
+from libertem.common.scheduler import Worker, WorkerSet
 from libertem.common.backend import set_use_cpu, set_use_cuda
-from libertem.utils.async_utils import adjust_event_loop_policy
+from libertem.common.async_utils import adjust_event_loop_policy
 
 
 log = logging.getLogger(__name__)
@@ -40,7 +41,9 @@ def cluster_spec(
         name: str = 'default', num_service: int = 1, options: Optional[dict] = None,
         preload: Optional[Tuple[str]] = None):
     '''
-    Create a spec for a LiberTEM Dask cluster
+    Create a worker specification dictionary for a LiberTEM Dask cluster
+
+    The return from this function can be passed to :code:`DaskJobExecutor.make_local(spec=spec)`.
 
     This creates a Dask cluster spec with special initializations and resource tags
     for CPU + GPU processing in LiberTEM.
@@ -55,7 +58,8 @@ def cluster_spec(
         number and identification of workers, not the CPU cores that are used.
     cudas
         IDs for CUDA device workers. LiberTEM will use the IDs specified here. This
-        has to match CUDA device IDs on the system.
+        has to match CUDA device IDs on the system. Specify the same ID multiple times
+        to spawn multiple workers on the same CUDA device.
     has_cupy
         Specify if the cluster should signal that it supports GPU-based array programming using
         CuPy
@@ -114,28 +118,45 @@ def cluster_spec(
         "options": cuda_options
     }
 
+    def _get_tracing_setup(service_name: str, service_id: str) -> str:
+        return (
+            f"from libertem.common.tracing import maybe_setup_tracing; "
+            f"maybe_setup_tracing(service_name='{service_name}', service_id='{service_id}')"
+        )
+
     for cpu in cpus:
+        worker_name = f'{name}-cpu-{cpu}'
         cpu_spec = deepcopy(cpu_base_spec)
         cpu_spec['options']['preload'] = preload + (
             'from libertem.executor.dask import worker_setup; '
             + f'worker_setup(resource="CPU", device={cpu})',
-            'libertem.preload'
+            _get_tracing_setup(worker_name, str(cpu)),
+            'libertem.preload',
         )
-        workers_spec[f'{name}-cpu-{cpu}'] = cpu_spec
+        workers_spec[worker_name] = cpu_spec
 
     for service in range(num_service):
+        worker_name = f'{name}-service-{service}'
         service_spec = deepcopy(service_base_spec)
-        service_spec['options']['preload'] = preload + ('libertem.preload',)
-        workers_spec[f'{name}-service-{service}'] = service_spec
+        service_spec['options']['preload'] = preload + (
+            _get_tracing_setup(worker_name, str(service)),
+            'libertem.preload',
+        )
+        workers_spec[worker_name] = service_spec
 
     for cuda in cudas:
+        worker_name = f'{name}-cuda-{cuda}'
+        if worker_name in workers_spec:
+            num_with_name = sum(n.startswith(worker_name) for n in workers_spec)
+            worker_name = f'{worker_name}-{num_with_name - 1}'
         cuda_spec = deepcopy(cuda_base_spec)
         cuda_spec['options']['preload'] = preload + (
             'from libertem.executor.dask import worker_setup; '
             + f'worker_setup(resource="CUDA", device={cuda})',
-            'libertem.preload'
+            _get_tracing_setup(worker_name, str(cuda)),
+            'libertem.preload',
         )
-        workers_spec[f'{name}-cuda-{cuda}'] = cuda_spec
+        workers_spec[worker_name] = cuda_spec
 
     return workers_spec
 
@@ -247,7 +268,7 @@ class CommonDaskMixin:
             )
         )
 
-    def get_available_workers(self):
+    def get_available_workers(self) -> WorkerSet:
         info = self.client.scheduler_info()
         return WorkerSet([
             Worker(
@@ -296,7 +317,7 @@ class CommonDaskMixin:
         return details_sorted
 
 
-class DaskJobExecutor(CommonDaskMixin, JobExecutor):
+class DaskJobExecutor(CommonDaskMixin, BaseJobExecutor):
     '''
     Default LiberTEM executor that uses `Dask futures
     <https://docs.dask.org/en/stable/futures.html>`_.
@@ -311,7 +332,7 @@ class DaskJobExecutor(CommonDaskMixin, JobExecutor):
         Specify if the cluster has LiberTEM resource tags and environment
         variables for GPU processing. Autodetected by default.
     '''
-    def __init__(self, client: distributed.Client, is_local: bool = False,
+    def __init__(self, client: dd.Client, is_local: bool = False,
                 lt_resources: bool = None):
         self.is_local = is_local
         self.client = client
@@ -329,6 +350,7 @@ class DaskJobExecutor(CommonDaskMixin, JobExecutor):
         tasks: Iterable[TaskProtocol],
         params_handle: Any,
         cancel_id: Any,
+        task_comm_handler: TaskCommHandler,
     ):
         tasks = list(tasks)
         tasks_w_index = list(enumerate(tasks))
@@ -421,7 +443,7 @@ class DaskJobExecutor(CommonDaskMixin, JobExecutor):
 
     def run_function(self, fn, *args, **kwargs):
         """
-        run a callable `fn` on any worker
+        run a callable :code:`fn` on any worker
         """
         fn_with_args = functools.partial(fn, *args, **kwargs)
         future = self.client.submit(fn_with_args, priority=1, pure=False)
@@ -429,7 +451,7 @@ class DaskJobExecutor(CommonDaskMixin, JobExecutor):
 
     def map(self, fn, iterable):
         """
-        Run a callable `fn` for each element in `iterable`, on arbitrary worker nodes.
+        Run a callable :code:`fn` for each element in :code:`iterable`, on arbitrary worker nodes.
 
         Parameters
         ----------
@@ -445,10 +467,10 @@ class DaskJobExecutor(CommonDaskMixin, JobExecutor):
 
     def run_each_host(self, fn, *args, **kwargs):
         """
-        Run a callable `fn` once on each host, gathering all results into a dict host -> result
-
-        TODO: any cancellation/errors to handle?
+        Run a callable :code:`fn` once on each host, gathering all results into
+        a dict host -> result
         """
+        # TODO: any cancellation/errors to handle?
         available_workers = self.get_available_workers()
 
         future_map = {}
@@ -578,9 +600,11 @@ class DaskJobExecutor(CommonDaskMixin, JobExecutor):
             cluster_kwargs['silence_logs'] = logging.WARN
 
         with set_num_threads_env(n=1):
-            cluster = dd.SpecCluster(workers=spec, **(cluster_kwargs or {}))
-            client = dd.Client(cluster, **(client_kwargs or {}))
-            client.wait_for_workers(len(spec))
+            # Mitigation for https://github.com/dask/distributed/issues/6776
+            with dask.config.set({"distributed.worker.profile.enabled": False}):
+                cluster = dd.SpecCluster(workers=spec, **(cluster_kwargs or {}))
+                client = dd.Client(cluster, **(client_kwargs or {}))
+                client.wait_for_workers(len(spec))
 
         is_local = not client_kwargs['set_as_default']
 
@@ -634,15 +658,17 @@ def cli_worker(
         cpus=cpus, cudas=cudas, has_cupy=has_cupy, name=name, options=options, preload=preload)
 
     async def run(spec):
-        workers = []
-        for name, spec in spec.items():
-            cls = spec['cls']
-            workers.append(
-                cls(scheduler, name=name, **spec['options'])
-            )
-        import asyncio
-        await asyncio.gather(*workers)
-        for w in workers:
-            await w.finished()
+        # Mitigation for https://github.com/dask/distributed/issues/6776
+        with dask.config.set({"distributed.worker.profile.enabled": False}):
+            workers = []
+            for name, spec in spec.items():
+                cls = spec['cls']
+                workers.append(
+                    cls(scheduler, name=name, **spec['options'])
+                )
+            import asyncio
+            await asyncio.gather(*workers)
+            for w in workers:
+                await w.finished()
 
     asyncio.get_event_loop().run_until_complete(run(spec))
