@@ -284,7 +284,7 @@ class JobExecutor:
         """
         raise NotImplementedError()
 
-    def modify_buffer_type(self, buf):
+    def modify_buffer_type(self, buf, sparse: bool = False):
         """
         Allow the executor to modify result buffers if necessary
 

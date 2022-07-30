@@ -23,7 +23,7 @@ from libertem.common.buffers import (
 )
 from libertem.common import Shape, Slice
 from libertem.common.udf import TilingPreferences, UDFProtocol
-from libertem.common.math import prod
+from libertem.common.math import prod, count_nonzero
 from libertem.io.dataset.base import (
     TilingScheme, Negotiator, Partition, DataSet, get_coordinates
 )
@@ -747,7 +747,7 @@ class UDFBase(UDFProtocol):
     def init_task_data(self) -> None:
         self.task_data = UDFData(self.get_task_data())
 
-    def init_result_buffers(self, executor=None) -> None:
+    def init_result_buffers(self, sparse=False, executor=None) -> None:
         """
         Create the UDFData instance containing BufferWrappers
         for results of this UDF. Same method used for
@@ -762,9 +762,12 @@ class UDFBase(UDFProtocol):
         such that we can modify buffers in both cases.
         """
         self.results = UDFData(self.get_result_buffers())
+        if sparse:
+            for name, buffer in self.results.items():
+                buffer.as_sparse()
         if executor is not None:
             for name, buffer in self.results.items():
-                new_buffer = executor.modify_buffer_type(buffer)
+                new_buffer = executor.modify_buffer_type(buffer, sparse=sparse)
                 self.results.set_buffer(name, new_buffer)
 
     def export_results(self) -> None:
@@ -1723,7 +1726,7 @@ class UDFPartRunner:
         for udf in udfs:
             udf.get_method()  # validate that one of the `process_*` methods is implemented
             udf.set_meta(meta)
-            udf.init_result_buffers()
+            udf.init_result_buffers(sparse=partition.is_sparse)
             udf.allocate_for_part(partition, roi)
             udf.init_task_data()
             # TODO: preprocess doesn't have access to the tiling scheme - is this ok?
@@ -1911,7 +1914,7 @@ class UDFRunner:
         )
         for udf in self._udfs:
             udf.set_meta(meta)
-            udf.init_result_buffers(executor=executor)
+            udf.init_result_buffers(sparse=dataset.is_sparse, executor=executor)
             udf.allocate_for_full(dataset, roi)
 
             if isinstance(udf, UDFPreprocessMixin):

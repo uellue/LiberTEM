@@ -6,6 +6,7 @@ from contextlib import contextmanager
 import collections
 
 import numpy as np
+import sparse as sparselib
 
 from libertem.common.math import prod
 from libertem.common.slice import Slice
@@ -231,6 +232,7 @@ class BufferWrapper:
         self._roi = None
         self._roi_is_zero = None
         self._contiguous_cache = dict()
+        self._sparse = False
         self.use = use
 
     def set_roi(self, roi):
@@ -269,6 +271,16 @@ class BufferWrapper:
     def shape(self):
         # precondition: _shape_for_kind has been called
         return self._shape
+
+    @property
+    def is_sparse(self):
+        return self._sparse
+
+    def as_sparse(self):
+        if self.has_data():
+            # FIXME handle other sparse types ?
+            self._data = sparselib.COO.from_numpy(self._data)
+        self._sparse = True
 
     def _shape_for_kind(self, kind, orig_shape, roi_count=None):
         if self._kind == "nav":
@@ -387,6 +399,11 @@ class BufferWrapper:
             raise RuntimeError("cannot allocate: data is already set")
         if self._where == 'device' and lib is not None:
             _z = lib.zeros
+        elif self.is_sparse:
+            self._data = sparselib.COO(np.zeros((len(self._shape), 0), dtype=int),
+                                       data=np.zeros((0,), dtype=self._dtype),
+                                       shape=self._shape)
+            return
         else:
             _z = zeros_aligned
         self._data = _z(self._shape, dtype=self._dtype)
@@ -561,8 +578,8 @@ class BufferWrapper:
         self._data = to_numpy(self._data)
 
     def __repr__(self):
-        return "<BufferWrapper kind={} dtype={} extra_shape={}>".format(
-            self._kind, self._dtype, self._extra_shape
+        return "<BufferWrapper kind={} dtype={} extra_shape={} sparse={}>".format(
+            self._kind, self._dtype, self._extra_shape, self.is_sparse
         )
 
     def replace_array(self, data: "nt.ArrayLike") -> None:

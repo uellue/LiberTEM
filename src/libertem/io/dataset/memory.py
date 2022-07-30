@@ -4,6 +4,7 @@ from typing import Optional, Tuple
 
 import psutil
 import numpy as np
+import sparse
 
 from libertem.common.math import prod
 from libertem.common.messageconverter import MessageConverter
@@ -215,6 +216,8 @@ class MemoryDataSet(DataSet):
         if data is None:
             assert datashape is not None
             data = np.zeros(datashape, dtype=np.float32)
+        if isinstance(data, sparse.SparseArray):
+            self._sparse = True
         if num_partitions is None:
             num_partitions = psutil.cpu_count(logical=False)
         # if tileshape is None:
@@ -333,6 +336,7 @@ class MemoryDataSet(DataSet):
                 force_need_decode=self._force_need_decode,
                 io_backend=self.get_io_backend(),
                 decoder=self.get_decoder(),
+                sparse=self.is_sparse,
             )
 
 

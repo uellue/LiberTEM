@@ -270,7 +270,7 @@ class DelayedJobExecutor(BaseJobExecutor):
             )
         ])
 
-    def modify_buffer_type(self, buf):
+    def modify_buffer_type(self, buf, sparse: bool = False):
         """
         Convert existing buffers from BufferWrapper to DaskBufferWrapper
 

@@ -51,9 +51,11 @@ class Partition:
         partition_slice: Slice,
         io_backend: IOBackend,
         decoder: Optional[Decoder],
+        sparse: bool = False,
     ):
         self.meta = meta
         self.slice = partition_slice
+        self._sparse = sparse
         self._io_backend = io_backend
         self._decoder = decoder
         if partition_slice.shape.nav.dims != 1:
@@ -112,6 +114,13 @@ class Partition:
         """
         return self.slice.shape.flatten_nav()
 
+    @property
+    def is_sparse(self) -> bool:
+        """
+        If this partition is stored in sparse format
+        """
+        return self._sparse
+
     def get_macrotile(self, dest_dtype="float32", roi=None):
         raise NotImplementedError()
 
@@ -150,7 +159,7 @@ class BasePartition(Partition):
     def __init__(
         self, meta: DataSetMeta, partition_slice: Slice,
         fileset: FileSet, start_frame: int, num_frames: int,
-        io_backend: IOBackend,
+        io_backend: IOBackend, sparse: bool = False,
         decoder: Optional[Decoder] = None,
     ):
         super().__init__(
@@ -158,6 +167,7 @@ class BasePartition(Partition):
             partition_slice=partition_slice,
             io_backend=io_backend,
             decoder=decoder,
+            sparse=sparse,
         )
         if start_frame < self.meta.image_count:
             self._fileset = fileset.get_for_range(

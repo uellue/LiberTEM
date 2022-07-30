@@ -27,6 +27,7 @@ class DataSet:
         self._sync_offset_info = None
         self._image_count = 0
         self._nav_shape_product = 0
+        self._sparse = False
         self._io_backend = io_backend
         self._meta: Optional[DataSetMeta] = None
 
@@ -116,6 +117,13 @@ class DataSet:
         (for example, 4D for pixelated STEM)
         """
         raise NotImplementedError()
+
+    @property
+    def is_sparse(self) -> bool:
+        """
+        If this dataset is stored in sparse format
+        """
+        return self._sparse
 
     def check_valid(self) -> bool:
         """
